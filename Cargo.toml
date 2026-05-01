@@ -1,0 +1,28 @@
+[package]
+name = "dear-imgui-rs-hello"
+version = "0.0.0"
+edition = "2018"
+authors = ["The imgui-rs Developers", "Isaac Raway <github.com/airways>"]
+description = "Examples for `imgui` crate (https://github.com/imgui-rs/imgui-rs) using Glium backend and Winit system"
+homepage = "https://github.com/airways/imgui-rs-sample-app"
+repository = "https://github.com/airways/imgui-rs-sample-app"
+license = "MIT/Apache-2.0"
+publish = false
+
+[dependencies]
+anyhow = "1.0.102"
+clipboard = "0.5"
+dear-imgui-rs = { version = "0.10.4", features = ["tracing"] }
+dear-imgui-sdl3 = { version = "0.10.4", features = ["opengl3-renderer"] }
+dear-implot = { version = "0.10.4", features = ["demo"] }
+env_logger = "0.11.10"
+gl = "0.14.0"
+glow = "0.17.0"
+image = "0.25.10"
+log = "0.4.29"
+num-complex = "0.4.6"
+rand = "0.10.0"
+rng = "0.1.0"
+rodio-experiments = { git = "https://github.com/RustAudio/rodio-experiments/" }
+rustfft = "6.4.1"
+sdl3 = "0.17.3"
