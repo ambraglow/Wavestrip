@@ -182,6 +182,7 @@ impl Dft for FourierTransform {
 
 pub fn ifft_test(x: &mut Vec<Complex32>) -> Vec<Complex32> {
     let mut _buffer = vec![Complex::new(0f32, 0f32); x.len()];
+    _buffer = x.clone();
     let ifft = Radix4::new(x.len(), rustfft::FftDirection::Inverse);
     ifft.process(&mut _buffer);
 

@@ -27,18 +27,29 @@ use sdl3::{
     video::GLProfile,
     EventPump,
 };
-use std::{convert::TryFrom, ffi::CString, ops::Not, thread::JoinHandle};
+use std::{
+    convert::TryFrom,
+    ffi::CString,
+    ops::{Not, Sub},
+    thread::JoinHandle,
+    time::{Instant, SystemTime},
+};
 use std::{fs::File, thread};
 use std::{ops::Add, sync::Mutex};
 use std::{sync::mpsc::channel, vec};
 use std::{sync::Arc, time::Duration};
 
-use rodio_experiments::Decoder;
 use rodio_experiments::{
-    dynamic_source_ext::ExtendDynamicSource,
-    effects::automatic_gain_control::AutomaticGainControlSettings,
+    buffer::SamplesBuffer, const_source::mixed::IntoMixed, generators::const_source,
+    DynamicSourceExt, FixedSource,
 };
+use rodio_experiments::{
+    effects::automatic_gain_control::AutomaticGainControlSettings, speakers::SpeakersBuilder,
+};
+use rodio_experiments::{fixed_source::mixed::IntoMixed as OtherIntoMixed, Decoder};
 use rodio_experiments::{fixed_source::FixedSourceExt, nz};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 
 use crate::fft::{
     complex::Sine,
@@ -97,17 +108,12 @@ fn main() -> anyhow::Result<()> {
     let sine_frequency = Arc::new(Mutex::new(500f32));
     let v1: Vec<f32> = (0u8..=10).map(f32::from).collect::<Vec<_>>();
     let mut application = app::Application::new()?;
-    let ft = Arc::new(Mutex::new(fft::dft::FourierTransform::new()));
+    let mut ft_lock: FourierTransform = FourierTransform::new();
+    // let ft = fft::dft::FourierTransform::new();
 
-    let file = File::open("./song.mp3")?;
-    let samples = Decoder::try_from(file)?
-        .resample_into_fixed_source(nz!(44100), nz!(1))
-        .automatic_gain_control(AutomaticGainControlSettings::default())
-        .take_duration(Duration::from_millis(3000))
-        .skip(44100 * 2)
-        .collect::<Vec<_>>();
+    // println!("{:?}", samples.len());
 
-    let samples = samples.iter().map(|a| *a as f64).collect::<Vec<f64>>();
+    // let mut samples = samples.iter().map(|a| *a).collect::<Vec<f32>>();
 
     // Initialize SDL3 + OpenGL3 backends
     init_for_opengl(
@@ -117,39 +123,67 @@ fn main() -> anyhow::Result<()> {
         "#version 150",
     )?;
 
-    let ft_thread1 = Arc::clone(&ft);
-    let sine_freq_thread1 = Arc::clone(&sine_frequency);
+    let (tx, rx) = mpsc::channel::<FourierTransform>();
+    // let tx_clone = tx.clone();
+
+    // tx.send(ft);
+    // ft.lock().unwrap().signal.append(&mut samples);
 
     let testdft = thread::spawn(move || {
-        println!("spawned dft thread");
-        let mut last_transform = {
-            let mut lock = ft_thread1.lock().unwrap();
-            let mut scary_vec = lock
-                .signal
-                .iter()
-                .map(|a| Complex32::new(*a, 0.0))
-                .collect::<Vec<_>>();
-            lock.bins = ditfft(&mut scary_vec);
-            lock.clone()
-        };
+        let thread_spawn_time = SystemTime::now();
+        println!("spawned dft thread - spawn time: {thread_spawn_time:?}");
+        let mut ft: FourierTransform = FourierTransform::new();
+        let handle = rodio_experiments::DeviceSinkBuilder::open_default_sink()
+            .expect("open default audio stream");
 
-        // ft_thread1.lock().unwrap().bins = ditfft(ft_thread1.lock().unwrap().signal.clone());
+        let file = File::open("./song.mp3").unwrap();
+        let sample_rate = 16384;
+        let samples = Decoder::try_from(file)
+            .unwrap()
+            .resample_into_fixed_source(nz!(16384), nz!(1))
+            .automatic_gain_control(AutomaticGainControlSettings::default())
+            .take_duration(Duration::from_secs(60))
+            .collect::<Vec<_>>();
+        ft.signal = samples.iter().map(|a| *a).collect::<Vec<f32>>();
+        let samples_duration_in_seconds: u64 = ft.signal.len() as u64 / sample_rate as u64;
+
+        let player = rodio_experiments::Player::connect_new(&handle.mixer());
+        let last_time = Instant::now();
 
         loop {
-            let mut lock = ft_thread1.lock().unwrap();
-            if last_transform.signal != lock.signal {
-                println!("signal frequency: {:?}", sine_freq_thread1.lock().unwrap());
-                // lock.dft();
+            for sample_chunk in samples.chunks(sample_rate) {
+                let loop_start = Instant::now();
+                let sample_source: SamplesBuffer =
+                    SamplesBuffer::new(nz!(1), nz!(16384), sample_chunk);
+                ft.signal = sample_chunk.iter().map(|a| *a).collect::<Vec<_>>();
 
-                let mut scary_vec = lock
-                    .signal
-                    .iter()
-                    .map(|a| Complex32::new(*a, 0.0))
-                    .collect::<Vec<_>>();
-                lock.bins = ditfft(&mut scary_vec);
-                // println!("scary_vec {:?}", lock.bins);
+                if last_time.elapsed().as_secs() != samples_duration_in_seconds {
+                    player.append(sample_source);
+                    player.play();
+                    let mut scary_vec = sample_chunk
+                        .iter()
+                        .map(|a| Complex32::new(*a, 0.0))
+                        .collect::<Vec<_>>();
 
-                last_transform = lock.clone();
+                    // if loop_start.elapsed().as_secs() == 1 {
+                    ft.bins = ditfft(&mut scary_vec);
+                    // }
+                    tx.send(ft.clone()).unwrap();
+                    // println!(
+                    //     "{:?} {:?} {:?} {:?}",
+                    //     loop_start.elapsed().as_millis(),
+                    //     last_time.elapsed().as_secs(),
+                    //     SystemTime::now(),
+                    //     samples_duration_in_seconds
+                    // );
+                    thread::sleep(Duration::from_millis(
+                        loop_start.elapsed().as_millis() as u64
+                    ));
+                } else {
+                    player.pause();
+                    thread::sleep(Duration::from_millis(1000));
+                    println!("kick a chicken!!");
+                }
             }
         }
         // return ft.simple_dft(&mut ft_signal);
@@ -181,6 +215,11 @@ fn main() -> anyhow::Result<()> {
 
         // 2) Start a new frame for the SDL3 + OpenGL backends
         new_frame(&mut application.imgui_cx);
+
+        ft_lock = rx.recv()?;
+
+        // println!("{:?}", ft_lock.bins);
+        // ft_lock.signal.append(&mut samples);
 
         let mut cfg = dear_imgui_rs::Theme::default();
         cfg.colors = vec![ColorOverride {
@@ -234,18 +273,23 @@ fn main() -> anyhow::Result<()> {
         //     .map(|(a, b)| *a + *b)
         //     .collect::<Vec<_>>();
 
-        // ft.lock().unwrap().signal = test_sine
+        // ft_lock.signal = test_sine
         //     .iter()
         //     .map(|meow| *meow as f32)
         //     .collect::<Vec<_>>();
 
-        ft.lock().unwrap().signal = samples.iter().map(|meow| *meow as f32).collect::<Vec<_>>();
+        // ft_lock.signal = samples
+        //     .lock()
+        //     .unwrap()
+        //     .iter()
+        //     .map(|meow| *meow as f32)
+        //     .collect::<Vec<_>>();
 
-        let ratio: Vec<f64> = v1
-            .iter()
-            .map(|vin| vin * (r1 / (r1 + r2)))
-            .map(f64::from)
-            .collect();
+        // let ratio: Vec<f64> = v1
+        //     .iter()
+        //     .map(|vin| vin * (r1 / (r1 + r2)))
+        //     .map(f64::from)
+        //     .collect();
 
         ui.window("Settings")
             .flags(window_flags)
@@ -277,37 +321,41 @@ fn main() -> anyhow::Result<()> {
                     println!("not a power of two {sine_samples:?}");
                     sine_samples.round_to_2n();
                 }
+
                 if let std::result::Result::Ok(token) = SubplotGrid::new("Plots", 2, 2)
                     .with_size([1200.0, 600.0])
                     .with_flags(SubplotFlags::NO_TITLE)
                     .begin()
                 {
-                    let x = (0..sine_samples.clone())
+                    let x = (0..ft_lock.signal.len())
                         .map(|a| a as f64)
                         .collect::<Vec<_>>();
 
-                    let dft_size = ft.lock().unwrap().bins.len();
+                    let audio_signal = ft_lock.signal.iter().map(|a| *a as f64).collect::<Vec<_>>();
 
-                    let dft_bins = &ft
-                        .lock()
-                        .unwrap()
+                    let dft_size = ft_lock.bins.len();
+
+                    let dft_bins = ft_lock
                         .bins
                         .split_at(dft_size / 2)
                         .0
                         .iter()
-                        .map(|a| a.re.abs() as f64)
+                        .map(|a| a.im.abs() as f64)
                         .collect::<Vec<_>>();
 
-                    // let ifft = ifft_test(&mut ft.lock().unwrap().bins)
-                    //     .iter()
-                    //     .map(|a| a.re as f64)
-                    //     .collect::<Vec<_>>();
+                    // let ifft = ifft_test(&mut ft_lock.bins);
+                    // println!("{:?} {:?}", ifft.len(), ifft);
+                    // let ifft = ifft.iter().map(|a| a.re as f64).collect::<Vec<_>>();
+
+                    // let ifft_x: Vec<f64> = (0..ifft.len() as i32)
+                    //     .map(|a| a as f64 / sample_rate as f64)
+                    //     .collect();
 
                     let dft_x: Vec<f64> = (0..dft_bins.len() as i32)
                         .map(|a| (sample_rate as f64 * a as f64) / dft_bins.len() as f64 / 2f64)
                         .collect();
 
-                    plot_ui.set_next_axes_limits(0.0, 22000.0, 0.0, 300.0, PlotCond::Always);
+                    plot_ui.set_next_axes_limits(0.0, 10000.0, 0.0, 300.0, PlotCond::Always);
                     if let Some(plot_token) = plot_ui.begin_plot("Radix-2 FFT") {
                         plot_ui.setup_y_axis(YAxis::Y1, "Magnitude".into(), AxisFlags::AUTO_FIT);
                         plot_ui.setup_x_axis(XAxis::X1, "Frequency".into(), AxisFlags::AUTO_FIT);
@@ -316,25 +364,16 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     if let Some(plot_token) = plot_ui.begin_plot("signal") {
-                        LinePlot::new("sine", &x, &samples).plot();
+                        // plot_ui.setup_y_axis(YAxis::Y1, "Amplitude".into(), AxisFlags::AUTO_FIT);
+                        LinePlot::new("", &x, &audio_signal).plot();
                         plot_token.end();
                     }
                     // if let Some(plot_token) = plot_ui.begin_plot("inverse fft") {
-                    //     LinePlot::new("dft", &dft_x, &ifft).plot();
+                    //     LinePlot::new("", &ifft_x, &ifft).plot();
                     //     plot_token.end();
                     // }
                     token.end();
                 }
-
-                // if let Some(_heatmap_plot) = plot_ui.begin_plot("Heatmap") {
-                //     let data: Vec<f64> = (0..100).map(|i| (i as f64 * 0.1).sin()).collect();
-                //     HeatmapPlot::new("Heat", &data, 10, 10)
-                //         .with_scale(-1.0, 1.0)
-                //         .with_bounds(0.0, 0.0, 1.0, 1.0)
-                //         .with_label_format(Some("%.2f"))
-                //         .plot();
-                //     _heatmap_plot.end();
-                // }
             });
 
         // 4) Render via OpenGL backend
