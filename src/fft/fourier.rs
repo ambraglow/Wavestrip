@@ -1,4 +1,8 @@
-use crate::fft::*;
+use std::{iter::FromIterator, ops::Deref};
+
+use rodio_experiments::source::FromIter;
+
+use crate::fft::{utils::even_odd_split, *};
 
 #[derive(Clone)]
 pub struct FourierTransform {
@@ -14,6 +18,35 @@ impl FourierTransform {
             signal: Vec::new(),
             twiddle_factors_table: Vec::new(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FourierVecf32(pub Vec<f32>);
+
+impl Deref for FourierVecf32 {
+    type Target = Vec<f32>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl FromIterator<f32> for FourierVecf32 {
+    fn from_iter<T: IntoIterator<Item = f32>>(iter: T) -> Self {
+        FourierVecf32(iter.into_iter().collect())
+    }
+}
+
+impl From<Vec<Complex32>> for FourierVecf32 {
+    fn from(value: Vec<Complex32>) -> Self {
+        FourierVecf32(value.iter().map(|a| a.re).collect())
+    }
+}
+
+impl From<Vec<f32>> for FourierVecf32 {
+    fn from(value: Vec<f32>) -> Self {
+        FourierVecf32(value)
     }
 }
 
@@ -64,6 +97,12 @@ impl Fourier for Vec<f32> {
 
     fn ditfft(&mut self) -> Vec<Complex32> {
         todo!();
+    }
+}
+
+impl Into<Vec<Complex32>> for FourierVecf32 {
+    fn into(self) -> Vec<Complex32> {
+        self.0.iter().map(|a| Complex32::new(*a, 0.0)).collect()
     }
 }
 
@@ -137,7 +176,7 @@ pub fn ditfft(x: &mut Vec<Complex32>) -> Vec<Complex<f32>> {
         return x.to_vec();
     }
 
-    let (mut even, mut odds) = split_cplx(x).unwrap();
+    let (mut even, mut odds) = even_odd_split(x).unwrap();
 
     even = ditfft(&mut even);
     odds = ditfft(&mut odds);
@@ -149,17 +188,6 @@ pub fn ditfft(x: &mut Vec<Complex32>) -> Vec<Complex<f32>> {
     }
 
     return x.to_vec();
-}
-
-#[allow(dead_code)]
-fn split_cplx(input: &mut Vec<Complex32>) -> Result<(Vec<Complex32>, Vec<Complex32>)> {
-    let (even_indices, odd_indices): (Vec<_>, Vec<_>) =
-        input.iter().enumerate().partition(|(i, _)| i % 2 == 0);
-
-    let even: Vec<Complex32> = even_indices.into_iter().map(|(_, val)| *val).collect();
-    let odd: Vec<Complex32> = odd_indices.into_iter().map(|(_, val)| *val).collect();
-
-    Ok((even, odd))
 }
 
 // This is basically what happens in the iterator but as for loops, code kept for reference

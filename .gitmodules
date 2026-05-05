@@ -1,0 +1,3 @@
+[submodule "rodio-experiments"]
+	path = rodio-experiments
+	url = https://github.com/RustAudio/rodio-experiments

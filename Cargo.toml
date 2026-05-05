@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 anyhow = "1.0.102"
 clipboard = "0.5"
+cpal = "0.17.3"
 dear-imgui-rs = { version = "0.10.4", features = ["tracing"] }
 dear-imgui-sdl3 = { version = "0.10.4", features = ["opengl3-renderer"] }
 dear-implot = { version = "0.10.4", features = ["demo"] }
@@ -23,6 +24,9 @@ log = "0.4.29"
 num-complex = "0.4.6"
 rand = "0.10.0"
 rng = "0.1.0"
-rodio-experiments = { git = "https://github.com/RustAudio/rodio-experiments/" }
+rodio-experiments = { path = "./rodio-experiments" }
 rustfft = "6.4.1"
 sdl3 = "0.17.3"
+
+[profile.dev.package."rodio-experiments"]
+opt-level = 3

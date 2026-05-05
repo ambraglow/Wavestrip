@@ -1,0 +1,2 @@
+# [build]
+# rustflags = ["-L", "/opt/homebrew/Cellar/sdl3/3.4.8/", "-l", "sdl3"]

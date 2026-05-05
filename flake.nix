@@ -21,6 +21,7 @@
             llvmPackages.bintools
             rustup
             sdl3
+            # darwin.libiconv
           ];
 
           RUSTC_VERSION = overrides.toolchain.channel;
@@ -38,8 +39,8 @@
             # add libraries here (e.g. pkgs.libvmi)
           ]);
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);
-
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);  
+          LLDB_DEBUGSERVER_PATH = ''/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/Resources/debugserver'';
 
           # Add glibc, clang, glib, and other headers to bindgen search path
           BINDGEN_EXTRA_CLANG_ARGS =
