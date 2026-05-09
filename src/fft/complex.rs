@@ -1,3 +1,5 @@
+use crate::app::FRACTION_STEP;
+use crate::fft::fourier::ditfft;
 use crate::fft::utils::even_odd_split;
 use crate::fft::*;
 use crate::fourier::Fourier;
@@ -21,10 +23,7 @@ impl Fourier for Vec<Complex32> {
     fn dft(&mut self) {
         todo!()
     }
-    fn fft(&mut self) {
-        todo!()
-    }
-    fn ditfft(&mut self) -> Vec<Complex32> {
+    fn fft(&mut self) -> Vec<Complex<f32>> {
         let N = self.len();
         let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
         // let mut out_vec: Vec<Complex32> = vec![Complex32::new(0f32, 0f32); N + 1];
@@ -38,8 +37,8 @@ impl Fourier for Vec<Complex32> {
 
         let (mut even, mut odds) = even_odd_split(self).unwrap();
 
-        even = even.ditfft();
-        odds = odds.ditfft();
+        even = even.fft();
+        odds = odds.fft();
 
         for k in 0..N / 2 {
             let t = W.powf(k as f32) * odds[k];
@@ -48,6 +47,40 @@ impl Fourier for Vec<Complex32> {
         }
 
         return self.to_vec();
+    }
+    fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32> {
+        let N = self.len();
+        // let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
+        // let mut out_vec: Vec<Complex32> = vec![Complex32::new(0f32, 0f32); N + 1];
+        // out_vec.append(&mut x.clone());
+
+        // println!("N: {:?}", N);
+
+        if N <= 1 {
+            return self.to_vec();
+        }
+
+        let (mut even, mut odds) = even_odd_split(self).unwrap();
+
+        even = even.ditfft(&twiddle_factors_table);
+        odds = odds.ditfft(&twiddle_factors_table);
+
+        let mut t: Complex32;
+        for k in 0..N / 2 {
+            if N / 2 != FRACTION_STEP / 2 {
+                // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
+                t = twiddle_factors_table[FRACTION_STEP - N + k] * odds[k];
+            } else {
+                // 0..1024
+                println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
+                t = twiddle_factors_table[k] * odds[k];
+            }
+
+            self[k] = even[k] + t;
+            self[k + N / 2] = even[k] - t;
+        }
+
+        self.to_vec()
     }
 }
 

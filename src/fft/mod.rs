@@ -14,3 +14,4 @@ pub mod complex;
 pub mod float;
 pub mod fourier;
 pub mod utils;
+pub mod windows;

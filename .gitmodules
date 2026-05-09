@@ -1,3 +1,6 @@
 [submodule "rodio-experiments"]
 	path = rodio-experiments
 	url = https://github.com/RustAudio/rodio-experiments
+[submodule "dear-imgui-rs"]
+	path = dear-imgui-rs
+	url = https://github.com/Latias94/dear-imgui-rs.git

@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use sdl3::libc::ARPOP_REPLY;
 
 use crate::fft::{
     complex::Sine,
@@ -21,8 +22,21 @@ fn main() -> anyhow::Result<()> {
     // let sine_frequency = Arc::new(Mutex::new(500f32));
     let v1: Vec<f32> = (0u8..=10).map(f32::from).collect::<Vec<_>>();
 
-    let mut application = app::Application::new()?;
+    dear_imgui_sdl3::enable_native_ime_ui();
+
+    let mut application = app::App::new()?;
     application.main_loop()?;
+
+    // dear_imgui_ash::multi_viewport_sdl3::enable(
+    //     &mut application.imgui.renderer,
+    //     &mut application.imgui.context,
+    //     application.vk.ctx.entry.clone(),
+    //     application.vk.ctx.instance.clone(),
+    //     application.vk.ctx.physical_device,
+    //     application.vk.ctx.queue,
+    //     application.vk.ctx.queue_family_index,
+    //     application.vk.ctx.queue_family_index,
+    // );
 
     Ok(())
 }

@@ -10,14 +10,18 @@ license = "MIT/Apache-2.0"
 publish = false
 
 [dependencies]
+sdl3 = { version = "0.17.3", features = ["ash"] }
 anyhow = "1.0.102"
+ash = "0.38.0"
 clipboard = "0.5"
 cpal = "0.17.3"
-dear-imgui-rs = { version = "0.10.4", features = ["tracing"] }
-dear-imgui-sdl3 = { version = "0.10.4", features = ["opengl3-renderer"] }
-dear-implot = { version = "0.10.4", features = ["demo"] }
+dear-imgui-ash = { version = "0.11.0", features = ["multi-viewport-sdl3"] }
+dear-imgui-rs = { version = "0.11.0", features = ["tracing"] }
+dear-imgui-sdl3 = { version = "0.11.0", features = ["multi-viewport"] }
+dear-implot = { version = "0.11.0", features = ["demo"] }
 env_logger = "0.11.10"
-gl = "0.14.0"
+# gl = "0.14.0"
+glam = "0.32.1"
 glow = "0.17.0"
 image = "0.25.10"
 log = "0.4.29"
@@ -26,7 +30,6 @@ rand = "0.10.0"
 rng = "0.1.0"
 rodio-experiments = { path = "./rodio-experiments" }
 rustfft = "6.4.1"
-sdl3 = "0.17.3"
 
 [profile.dev.package."rodio-experiments"]
 opt-level = 3

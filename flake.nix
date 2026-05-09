@@ -21,7 +21,6 @@
             llvmPackages.bintools
             rustup
             sdl3
-            # darwin.libiconv
           ];
 
           RUSTC_VERSION = overrides.toolchain.channel;
@@ -42,10 +41,21 @@
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);  
           LLDB_DEBUGSERVER_PATH = ''/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/Resources/debugserver'';
 
+          # VULKAN_SDK = "~/VulkanSDK/1.4.341.1/macOS";
+
+          # DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}";
+          # VK_ADD_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d";
+          # VK_ICD_FILENAMES="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json";
+          # VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json";
+          # PKG_CONFIG_PATH="$VULKAN_SDK/lib/pkgconfig:$PKG_CONFIG_PATH";
+
+
+
           # Add glibc, clang, glib, and other headers to bindgen search path
           BINDGEN_EXTRA_CLANG_ARGS =
           # Includes normal include path
           (builtins.map (a: ''-I"${a}/include"'') [
+
             # add dev libraries here (e.g. pkgs.libvmi.dev)
           ])
           # Includes with special directory paths

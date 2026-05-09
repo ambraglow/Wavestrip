@@ -11,7 +11,8 @@ Cargo.lock
 
 .DS_Store
 .vscode/
+.jj/
 
-*.mp3
-*.m4a
 imgui.ini
+
+assets/

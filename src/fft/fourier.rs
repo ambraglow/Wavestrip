@@ -1,52 +1,39 @@
-use std::{iter::FromIterator, ops::Deref};
+use std::iter::FromIterator;
+use std::ops::{Deref, DerefMut};
 
-use rodio_experiments::source::FromIter;
-
+use crate::app::FRACTION_STEP;
 use crate::fft::{utils::even_odd_split, *};
 
 #[derive(Clone)]
-pub struct FourierTransform {
+pub struct FourierTransform<T: Copy> {
     pub bins: Vec<Complex32>,
+    pub split_bins: (Vec<T>, Vec<T>),
     pub signal: Vec<f32>,
     pub twiddle_factors_table: Vec<Complex32>,
 }
 
-impl FourierTransform {
+impl FourierTransform<Complex32> {
     pub fn new() -> Self {
         FourierTransform {
             bins: Vec::new(),
+            split_bins: (Vec::new(), Vec::new()),
             signal: Vec::new(),
-            twiddle_factors_table: Vec::new(),
+            twiddle_factors_table: twiddle_precompute(1024),
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct FourierVecf32(pub Vec<f32>);
+    pub fn twiddle_precompute(&mut self, N: usize) -> Vec<Complex32> {
+        let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
 
-impl Deref for FourierVecf32 {
-    type Target = Vec<f32>;
+        let twiddle_factors = (0..N).map(|n| W.powf(n as f32)).collect::<Vec<Complex32>>();
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        return twiddle_factors;
     }
-}
 
-impl FromIterator<f32> for FourierVecf32 {
-    fn from_iter<T: IntoIterator<Item = f32>>(iter: T) -> Self {
-        FourierVecf32(iter.into_iter().collect())
-    }
-}
-
-impl From<Vec<Complex32>> for FourierVecf32 {
-    fn from(value: Vec<Complex32>) -> Self {
-        FourierVecf32(value.iter().map(|a| a.re).collect())
-    }
-}
-
-impl From<Vec<f32>> for FourierVecf32 {
-    fn from(value: Vec<f32>) -> Self {
-        FourierVecf32(value)
+    pub fn add_zero_padding(&mut self, N: usize) {
+        // self.signal
+        // .append(&mut vec![0f32; ZERO_PADDING - FRACTION_STEP]);
+        // self.bins = self.signal.clone();
     }
 }
 
@@ -54,59 +41,11 @@ impl From<Vec<f32>> for FourierVecf32 {
 pub trait Fourier {
     fn simple_dft(&mut self) -> Vec<Complex32>;
     fn dft(&mut self);
-    fn fft(&mut self);
-    fn ditfft(&mut self) -> Vec<Complex32>;
+    fn fft(&mut self) -> Vec<Complex32>;
+    fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32>;
 }
 
-#[allow(dead_code)]
-pub trait Window {
-    // fn hamming();
-    fn rectangular(&mut self, points: u32) -> anyhow::Result<Vec<f32>>;
-}
-
-#[allow(dead_code)]
-impl Window for FourierTransform {
-    fn rectangular(&mut self, points: u32) -> anyhow::Result<Vec<f32>> {
-        Ok(self.bins.iter().map(|a| a.abs()).collect::<Vec<_>>())
-    }
-}
-
-impl Fourier for Vec<f32> {
-    fn simple_dft(&mut self) -> Vec<Complex32> {
-        let signal = self.len();
-        let mut temp: Vec<Complex32> = vec![Complex32::default(); signal as usize];
-
-        (0..signal)
-            .flat_map(|frequency_bin| (0..signal).map(move |sample| (frequency_bin, sample)))
-            .for_each(|(frequency_bin, sample)| {
-                let angle: f32 = -TAU * frequency_bin as f32 * sample as f32 / signal as f32;
-                let complex: Complex32 = Complex32::new(angle.cos(), angle.sin());
-                temp[frequency_bin] += self[sample] * complex;
-            });
-
-        temp
-    }
-
-    fn dft(&mut self) {
-        todo!();
-    }
-
-    fn fft(&mut self) {
-        todo!();
-    }
-
-    fn ditfft(&mut self) -> Vec<Complex32> {
-        todo!();
-    }
-}
-
-impl Into<Vec<Complex32>> for FourierVecf32 {
-    fn into(self) -> Vec<Complex32> {
-        self.0.iter().map(|a| Complex32::new(*a, 0.0)).collect()
-    }
-}
-
-impl Fourier for FourierTransform {
+impl Fourier for FourierTransform<Complex32> {
     fn simple_dft(&mut self) -> Vec<Complex32> {
         let signal = self.signal.len();
         let mut temp: Vec<Complex32> = vec![Complex32::default(); signal as usize];
@@ -125,7 +64,7 @@ impl Fourier for FourierTransform {
     /// Simple DFT
     fn dft(&mut self) {
         let signal = self.signal.len() as i32;
-        self.bins = vec![Complex32::default(); signal as usize];
+        self.bins = vec![Complex32::default(); signal as usize].into();
 
         (0..signal as usize)
             .flat_map(|frequency_bin| {
@@ -138,11 +77,12 @@ impl Fourier for FourierTransform {
             });
     }
 
-    fn fft(&mut self) {
+    fn fft(&mut self) -> Vec<num_complex::Complex<f32>> {
         todo!()
     }
 
-    fn ditfft(&mut self) -> Vec<Complex32> {
+    #[allow(non_snake_case)]
+    fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32> {
         todo!()
     }
 }
@@ -151,9 +91,37 @@ impl Fourier for FourierTransform {
 pub fn twiddle_precompute(N: usize) -> Vec<Complex32> {
     let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
 
-    let twiddle_factors = (0..(N / 2) - 1)
+    let mut twiddle_factors = (0..N / 2)
         .map(|n| W.powf(n as f32))
         .collect::<Vec<Complex32>>();
+
+    // let (mut a, _) = even_odd_split(&mut twiddle_factors).unwrap();
+    // let mut n: usize = a.len();
+    // twiddle_factors.append(&mut a);
+    // let mut a = twiddle_factors.clone();
+    let mut n: usize = twiddle_factors.len();
+    while n != 1 {
+        println!("{n:?}");
+        let (mut a, _) = even_odd_split(&mut twiddle_factors).unwrap();
+        let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+        twiddle_factors.append(&mut meow);
+
+        while a.len() < twiddle_factors.len() {
+            (a, _) = even_odd_split(&mut a).unwrap();
+            let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+            twiddle_factors.append(&mut meow);
+            println!("{:?}", a.len());
+            if a.len() <= 1 {
+                let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+                twiddle_factors.append(&mut meow);
+                break;
+            }
+        }
+        n = a.len();
+
+        // let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+        // twiddle_factors.append(&mut meow);
+    }
 
     return twiddle_factors;
 }
@@ -164,9 +132,9 @@ pub fn twiddle_precompute(N: usize) -> Vec<Complex32> {
 // the output Vec MUST be of a complex type! real part representing the cosine amplitudes, imaginary representing the sine amplitudes.
 // change your variable names to lowercase for time-domain and uppercase for frequency-domain.
 #[allow(non_snake_case)]
-pub fn ditfft(x: &mut Vec<Complex32>) -> Vec<Complex<f32>> {
+pub fn ditfft(x: &mut Vec<Complex32>, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex<f32>> {
     let N = x.len();
-    let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
+    // let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
     // let mut out_vec: Vec<Complex32> = vec![Complex32::new(0f32, 0f32); N + 1];
     // out_vec.append(&mut x.clone());
 
@@ -178,11 +146,20 @@ pub fn ditfft(x: &mut Vec<Complex32>) -> Vec<Complex<f32>> {
 
     let (mut even, mut odds) = even_odd_split(x).unwrap();
 
-    even = ditfft(&mut even);
-    odds = ditfft(&mut odds);
+    even = ditfft(&mut even, &twiddle_factors_table);
+    odds = ditfft(&mut odds, &twiddle_factors_table);
 
+    let mut t: Complex32;
     for k in 0..N / 2 {
-        let t = W.powf(k as f32) * odds[k];
+        if N / 2 != FRACTION_STEP / 2 {
+            // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
+            t = twiddle_factors_table[FRACTION_STEP - N + k] * odds[k];
+        } else {
+            // 0..1024
+            // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
+            t = twiddle_factors_table[k] * odds[k];
+        }
+
         x[k] = even[k] + t;
         x[k + N / 2] = even[k] - t;
     }
