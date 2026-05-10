@@ -21,6 +21,7 @@
             llvmPackages.bintools
             rustup
             sdl3
+            fd
           ];
 
           RUSTC_VERSION = overrides.toolchain.channel;
@@ -31,6 +32,8 @@
           shellHook = ''
             export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
             export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
+            VULKAN_SDK=$(fd -t d -s "VulkanSDK" ~/) && export VULKAN_SDK
+            source $VULKAN_SDK/*.*.*.*/setup-env.sh
           '';
 
           # Add precompiled library to rustc search path

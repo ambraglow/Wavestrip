@@ -1,26 +1,17 @@
 use anyhow::{Ok, Result};
 use ash::vk;
 use dear_imgui_ash::{AshRenderer, Options};
-use dear_imgui_rs::{
-    sys::{igColorConvertU32ToFloat4, igPushStyleVar_Float, ImGuiCol_PlotLines},
-    *,
-};
+use dear_imgui_rs::*;
 use dear_imgui_rs::{ConfigFlags, Context};
-use dear_imgui_sdl3::{enable_native_ime_ui, process_sys_event, sdl3_poll_event_ll};
+use dear_imgui_sdl3::{process_sys_event, sdl3_poll_event_ll};
 use dear_implot::PlotContext;
 use dear_implot::*;
-use log::{debug, error, info, log_enabled, Level};
-use num_complex::{Complex, Complex32, ComplexFloat};
-use rand::seq::IteratorRandom;
+use num_complex::{Complex32, ComplexFloat};
 use rodio_experiments::{
     buffer::SamplesBuffer,
-    const_source::mixed::IntoMixed,
-    generators::const_source,
-    microphone::MicrophoneBuilder,
     source::{self, AutomaticGainControlSettings},
     DynamicSourceExt, FixedSource, Player, Source,
 };
-use rodio_experiments::{effects::const_source::AutomaticGainControl, speakers::SpeakersBuilder};
 use rodio_experiments::{fixed_source::mixed::IntoMixed as OtherIntoMixed, Decoder};
 use rodio_experiments::{fixed_source::FixedSourceExt, nz};
 use rustfft::num_traits::{ToPrimitive, Zero};
@@ -90,7 +81,6 @@ pub struct App<T: Clone, E: Clone> {
     pub channels: (Sender<(T, E)>, Receiver<(T, E)>),
     pub status: Arc<AtomicBool>,
     pub second_thread: Option<JoinHandle<()>>,
-    pub quit: bool,
     pub show_demo_window: bool,
     pub start_playback_thread: bool,
     pub fft_step: Arc<AtomicUsize>,
@@ -173,13 +163,11 @@ impl App<Vec<Complex32>, Vec<f32>> {
             let io = imgui_context.io_mut();
             let mut flags = io.config_flags();
             flags.insert(ConfigFlags::DOCKING_ENABLE);
-            // flags.insert(ConfigFlags::VIEWPORTS_ENABLE);
             io.set_config_flags(flags);
 
             let style = imgui_context.style_mut();
             style.set_font_scale_dpi(main_scale);
         }
-        // imgui_context.enable_multi_viewport();
 
         // SDL3 platform backend for Vulkan (sets Platform_CreateVkSurface for multi-viewport).
         dear_imgui_sdl3::init_for_vulkan(&mut imgui_context, &window)?;
@@ -265,7 +253,6 @@ impl App<Vec<Complex32>, Vec<f32>> {
             channels,
             status: Arc::new(AtomicBool::new(true)),
             second_thread: None,
-            quit: false,
             show_demo_window: false,
             start_playback_thread: true,
             fft_step: Arc::new(AtomicUsize::new(1024)),
@@ -694,16 +681,10 @@ impl App<Vec<Complex32>, Vec<f32>> {
                 )
                 .unwrap();
             }
-
-            let io_flags = self.imgui.context.io().config_flags();
-            if io_flags.contains(ConfigFlags::VIEWPORTS_ENABLE) {
-                self.imgui.context.update_platform_windows();
-                self.imgui.context.render_platform_windows_default();
-            }
         }
 
-        self.destroy_external_texture();
         dear_imgui_sdl3::shutdown(&mut self.imgui.context);
+        self.destroy_external_texture();
         Ok(())
     }
 }
