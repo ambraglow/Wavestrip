@@ -60,17 +60,28 @@ impl VulkanContext {
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
             .api_version(API_VERSION_1_3);
+
+        let meow = window
+            .vulkan_instance_extensions()?
             .into_iter()
-            .map(CString::new)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|e| CString::new(e).unwrap())
+            .collect::<Vec<_>>();
+
+        println!("{:?}", meow);
+
+        let extension_names = [
+            vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_NAME.as_ptr(),
+            vk::KHR_PORTABILITY_ENUMERATION_NAME.as_ptr(),
+            vk::KHR_SURFACE_NAME.as_ptr(),
+            vk::EXT_METAL_SURFACE_NAME.as_ptr(),
+        ]
+        .to_vec();
 
         let create_flags = vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR;
 
-        let extension_ptrs: Vec<*const i8> = extensions_cstr.iter().map(|s| s.as_ptr()).collect();
-
         let instance_create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
-            .enabled_extension_names(&extension_ptrs)
+            .enabled_extension_names(&extension_names)
             .flags(create_flags);
         let instance = unsafe { entry.create_instance(&instance_create_info, None)? };
 
@@ -466,7 +477,11 @@ pub fn create_device(
         .queue_family_index(queue_family_index)
         .queue_priorities(&priorities)];
 
-    let device_extensions = [khr_swapchain::NAME.as_ptr()];
+    // added portability subset per-validation layers message requiring it!!
+    let device_extensions = [
+        khr_swapchain::NAME.as_ptr(),
+        KHR_PORTABILITY_SUBSET_NAME.as_ptr(),
+    ];
     let device_create_info = vk::DeviceCreateInfo::default()
         .queue_create_infos(&queue_info)
         .enabled_extension_names(&device_extensions);
