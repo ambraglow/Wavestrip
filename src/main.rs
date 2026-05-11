@@ -3,7 +3,7 @@ use sdl3::libc::ARPOP_REPLY;
 
 use crate::fft::{
     complex::Sine,
-    fourier::{self, ditfft, twiddle_precompute, FourierTransform},
+    fourier::{self, FourierTransform, ditfft, twiddle_precompute},
 };
 use num_complex::Complex32;
 use std::sync::mpsc;
@@ -23,20 +23,8 @@ fn main() -> anyhow::Result<()> {
     let v1: Vec<f32> = (0u8..=10).map(f32::from).collect::<Vec<_>>();
 
     dear_imgui_sdl3::enable_native_ime_ui();
-
     let mut application = app::App::new()?;
     application.main_loop()?;
-
-    // dear_imgui_ash::multi_viewport_sdl3::enable(
-    //     &mut application.imgui.renderer,
-    //     &mut application.imgui.context,
-    //     application.vk.ctx.entry.clone(),
-    //     application.vk.ctx.instance.clone(),
-    //     application.vk.ctx.physical_device,
-    //     application.vk.ctx.queue,
-    //     application.vk.ctx.queue_family_index,
-    //     application.vk.ctx.queue_family_index,
-    // );
 
     Ok(())
 }
