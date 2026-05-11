@@ -10,6 +10,8 @@ pub mod complex;
 #[allow(dead_code)]
 pub mod fourier;
 
+#[allow(dead_code)]
+pub mod sine;
 
 #[allow(dead_code)]
 pub mod utils;
