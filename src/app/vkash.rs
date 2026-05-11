@@ -18,10 +18,14 @@ use std::ffi::CString;
 use std::fmt::Debug;
 use std::time::Instant;
 
-use anyhow::{bail, Ok};
+use anyhow::{Ok, bail};
 use ash::khr::{surface as khr_surface, swapchain as khr_swapchain};
-use ash::vk::{Handle, SurfaceKHR};
-use ash::{vk, Device, Entry, Instance};
+use ash::mvk::macos_surface;
+use ash::vk::{
+    API_VERSION_1_3, Handle, KHR_PORTABILITY_SUBSET_NAME, MacOSSurfaceCreateInfoMVK,
+    PFN_vkCreateMacOSSurfaceMVK, SurfaceKHR,
+};
+use ash::{Device, Entry, Instance, vk};
 use dear_imgui_ash::{AshRenderer, Options as AshOptions};
 use dear_imgui_rs::{Condition, ConfigFlags, Context};
 use dear_imgui_sdl3::{self as imgui_sdl3_backend, GamepadMode};
@@ -55,23 +59,7 @@ impl VulkanContext {
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name.as_c_str())
             .engine_name(engine_name.as_c_str())
-            .api_version(vk::make_api_version(0, 1, 0, 0));
-
-        let mut extension_names = window.vulkan_instance_extensions()?;
-        extension_names.push(
-            vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_NAME
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
-        extension_names.push(
-            vk::KHR_PORTABILITY_ENUMERATION_NAME
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
-
-        let extensions_cstr: Vec<CString> = extension_names
+            .api_version(API_VERSION_1_3);
             .into_iter()
             .map(CString::new)
             .collect::<Result<Vec<_>, _>>()?;
