@@ -63,7 +63,7 @@ pub struct ExternalTexture {
 impl VulkanContext {
     pub fn new(window: &sdl3::video::Window, title: &str) -> anyhow::Result<Self> {
         // Use runtime loader mode so CI/users don't need `vulkan-1.lib` at link time.
-        let entry = unsafe { Entry::load()? };
+        let entry: Entry = unsafe { Entry::linked() };
 
         let app_name = CString::new(title)?;
         let engine_name = CString::new("dear-imgui")?;
