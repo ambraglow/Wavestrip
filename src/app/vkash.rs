@@ -163,8 +163,8 @@ impl SwapchainState {
             vk::CompositeAlphaFlagsKHR::POST_MULTIPLIED,
         ]
         .into_iter()
-        .find(|c| caps.supported_composite_alpha.contains(**c))
-        .unwrap_or(&vk::CompositeAlphaFlagsKHR::OPAQUE);
+        .find(|c| caps.supported_composite_alpha.contains(*c))
+        .unwrap_or(vk::CompositeAlphaFlagsKHR::OPAQUE);
 
         let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(ctx.surface)
@@ -176,7 +176,7 @@ impl SwapchainState {
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
             .pre_transform(caps.current_transform)
-            .composite_alpha(*composite_alpha)
+            .composite_alpha(composite_alpha)
             .present_mode(present_mode)
             .clipped(true);
 
