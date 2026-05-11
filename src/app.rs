@@ -6,20 +6,23 @@ use dear_imgui_rs::{ConfigFlags, Context};
 use dear_imgui_sdl3::{process_sys_event, sdl3_poll_event_ll};
 use dear_implot::PlotContext;
 use dear_implot::*;
+use log::debug;
 use num_complex::{Complex32, ComplexFloat};
+use rodio_experiments::{Decoder, fixed_source::mixed::IntoMixed as OtherIntoMixed};
 use rodio_experiments::{
+    DynamicSourceExt, FixedSource, Player, Source,
     buffer::SamplesBuffer,
     source::{self, AutomaticGainControlSettings},
-    DynamicSourceExt, FixedSource, Player, Source,
 };
-use rodio_experiments::{fixed_source::mixed::IntoMixed as OtherIntoMixed, Decoder};
 use rodio_experiments::{fixed_source::FixedSourceExt, nz};
 use rustfft::num_traits::{ToPrimitive, Zero};
+use sdl3::sys::vulkan::SDL_Vulkan_LoadLibrary;
 use sdl3::{
+    EventPump,
     event::Event,
     gamepad::Axis,
     sys::{
-        events::{SDL_Event, SDL_EVENT_KEY_DOWN, SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED},
+        events::{SDL_EVENT_KEY_DOWN, SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED, SDL_Event},
         init::SDL_Quit,
         keyboard::SDL_GetKeyName,
         keycode::{self, SDLK_ESCAPE, SDLK_LGUI},
@@ -30,7 +33,6 @@ use sdl3::{
         video::SDL_GL_GetProcAddress,
     },
     video::GLProfile,
-    EventPump,
 };
 use sdl3::{
     sys::events::SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED,
@@ -51,16 +53,16 @@ use std::{
 };
 use std::{fs::File, thread};
 use std::{ops::Add, sync::Mutex};
+use std::{sync::Arc, time::Duration};
 use std::{sync::atomic::AtomicBool, thread::Thread};
 use std::{sync::mpsc::channel, vec};
-use std::{sync::Arc, time::Duration};
 
 mod vkash;
 use crate::{
     app::vkash::*,
     fft::{
         complex::Sine,
-        fourier::{self, ditfft, twiddle_precompute, Fourier, FourierTransform},
+        fourier::{self, Fourier, FourierTransform, ditfft, twiddle_precompute},
         utils::PowerOfTwo,
         windows::Window,
     },
@@ -72,12 +74,9 @@ pub static FRACTION_STEP: usize = 2048;
 pub struct App<T: Clone, E: Clone> {
     pub vk: VulkanState,
     pub imgui: ImguiState,
-    // pub imgui_cx: dear_imgui_rs::Context,
-    // pub plot_cx: PlotContext,
     pub sdl_context: sdl3::Sdl,
     pub sdl_video: sdl3::VideoSubsystem,
     pub window: sdl3::video::Window,
-    // pub gl_context: GLContext,
     pub channels: (Sender<(T, E)>, Receiver<(T, E)>),
     pub status: Arc<AtomicBool>,
     pub second_thread: Option<JoinHandle<()>>,
@@ -91,12 +90,6 @@ impl<T: Clone, E: Clone> Drop for App<T, E> {
     fn drop(&mut self) {
         dear_imgui_sdl3::shutdown(&mut self.imgui.context);
         self.destroy_external_texture();
-
-        // Avoid shutdown assertions by ensuring platform windows are destroyed before the
-        // ImGui context and renderer are dropped.
-        // dear_imgui_ash::multi_viewport_sdl3::shutdown_multi_viewport_support(
-        //     &mut self.imgui.context,
-        // );
     }
 }
 
@@ -270,7 +263,6 @@ impl App<Vec<Complex32>, Vec<f32>> {
         }
         Ok(())
     }
-
     pub fn init_external_texture(&mut self) -> anyhow::Result<()> {
         if self.imgui.external.is_some() {
             return Ok(());
@@ -347,8 +339,8 @@ impl App<Vec<Complex32>, Vec<f32>> {
                 loop {
                     player.play();
                     if player.empty() {
+                        log::debug!("player is empty!");
                         atomic_status.store(false, std::sync::atomic::Ordering::SeqCst);
-                        // println!("player empty or something");
                         break;
                     }
                     while !player.empty() {
@@ -360,14 +352,13 @@ impl App<Vec<Complex32>, Vec<f32>> {
                         while player_position.as_secs() <= player_position.as_secs() + 1 {
                             let fraction_step: usize =
                                 fft_step.load(std::sync::atomic::Ordering::SeqCst);
-                            // get the current sample index
+
                             pos_sample = (player.get_pos().as_millis().to_u64().unwrap()
                                 * source_sample_rate.get() as u64)
                                 / 1000;
                             thread::sleep(Duration::from_millis(step_interval as u64 + 2));
-                            // check if the current sample index is greater than the last + 1024
+
                             if pos_sample > last_sample {
-                                // println!("i'm not insane i swear");
                                 let len = pos_sample.to_usize().unwrap()
                                     - last_sample.to_usize().unwrap();
 
@@ -397,19 +388,18 @@ impl App<Vec<Complex32>, Vec<f32>> {
 
                                         out.fft();
 
-                                        // println!(
-                                        //     "points spacing: {:?} out len: {:?}",
-                                        //     (source_sample_rate.get() as u64 / out.len() as u64),
-                                        //     out.len()
-                                        // );
+                                        log::debug!(
+                                            "points spacing: {:?} out len: {:?}",
+                                            (source_sample_rate.get() as u64 / out.len() as u64),
+                                            out.len()
+                                        );
 
                                         tx_clone.send((out, b)).unwrap();
                                     }
                                 }
 
-                                // println!("{:?} {:?}", pos_sample, last_sample);
+                                log::debug!("{:?} {:?}", pos_sample, last_sample);
                             }
-                            // clone current index into last_sample
                             last_sample = pos_sample.clone();
                         }
                     }
@@ -552,7 +542,6 @@ impl App<Vec<Complex32>, Vec<f32>> {
                 .size(size, Condition::Always)
                 .build(|| {
                     let group_token = ui.begin_group();
-                    // ui.separator();
                     ui.slider_i32("fft_size", &mut step, 1, 2048);
                     step.round_to_2n();
                     ui.separator();
@@ -683,7 +672,6 @@ impl App<Vec<Complex32>, Vec<f32>> {
             }
         }
 
-        dear_imgui_sdl3::shutdown(&mut self.imgui.context);
         self.destroy_external_texture();
         Ok(())
     }
