@@ -37,7 +37,7 @@ impl FourierTransform<Complex32> {
 #[allow(dead_code)]
 pub trait Fourier {
     fn simple_dft(&mut self) -> Vec<Complex32>;
-    fn dft(&mut self);
+    fn dft(&mut self) -> Vec<Complex32>;
     fn fft(&mut self) -> Vec<Complex32>;
     fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32>;
 }
@@ -59,7 +59,7 @@ impl Fourier for FourierTransform<Complex32> {
     }
 
     /// Simple DFT
-    fn dft(&mut self) {
+    fn dft(&mut self) -> Vec<Complex32> {
         let signal = self.signal.len() as i32;
         self.bins = vec![Complex32::default(); signal as usize].into();
 
@@ -72,12 +72,12 @@ impl Fourier for FourierTransform<Complex32> {
                 let complex: Complex32 = Complex32::new(angle.cos(), angle.sin());
                 self.bins[frequency_bin] += self.signal[sample] * complex;
             });
-    }
 
+        return Vec::new();
+    }
     fn fft(&mut self) -> Vec<num_complex::Complex<f32>> {
         todo!()
     }
-
     fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32> {
         todo!()
     }
@@ -149,7 +149,7 @@ pub fn ditfft(x: &mut Vec<Complex32>, twiddle_factors_table: &Vec<Complex32>) ->
     for k in 0..N / 2 {
         if N / 2 != fft_N / 2 {
             // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
-            t = twiddle_factors_table[fft_N - N + k] * odds[k];
+            t = twiddle_factors_table[fft_N % fft_N / 2] * odds[k];
         } else {
             // 0..1024
             // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);

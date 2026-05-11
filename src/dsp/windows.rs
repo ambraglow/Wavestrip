@@ -21,6 +21,9 @@ impl Types {
     pub const VALUES: [&str; 5] = ["no window", "Blackman", "Ham", "hanning", "rectangular"];
 }
 
+// TODO: get rid of allocations per-window
+// See:
+//      self.iter_mut().zip(blackman).for_each(|(a, b)| *a = *a * b);
 impl Window for Vec<f32> {
     fn blackman(&mut self) {
         let size = self.len();

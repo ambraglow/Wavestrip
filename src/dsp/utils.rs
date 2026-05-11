@@ -1,4 +1,5 @@
 use crate::dsp::*;
+use rayon::iter::*;
 
 pub trait PowerOfTwo {
     fn is_power_of_two(&mut self) -> bool;
