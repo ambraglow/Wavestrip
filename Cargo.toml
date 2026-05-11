@@ -1,26 +1,18 @@
 [package]
 name = "dear-imgui-rs-hello"
 version = "0.0.0"
-edition = "2018"
-authors = ["The imgui-rs Developers", "Isaac Raway <github.com/airways>"]
-description = "Examples for `imgui` crate (https://github.com/imgui-rs/imgui-rs) using Glium backend and Winit system"
-homepage = "https://github.com/airways/imgui-rs-sample-app"
-repository = "https://github.com/airways/imgui-rs-sample-app"
-license = "MIT/Apache-2.0"
-publish = false
+edition = "2024"
 
 [dependencies]
-sdl3 = { version = "0.17.3", features = ["ash"] }
+sdl3 = { version = "0.18.3", features = ["ash"] }
 anyhow = "1.0.102"
-ash = "0.38.0"
+ash = { version = "0.38.0", features = ["linked"] }
 clipboard = "0.5"
-cpal = "0.17.3"
-dear-imgui-ash = { version = "0.11.0", features = ["multi-viewport-sdl3"] }
-dear-imgui-rs = { version = "0.11.0", features = ["tracing"] }
-dear-imgui-sdl3 = { version = "0.11.0", features = ["multi-viewport"] }
-dear-implot = { version = "0.11.0", features = ["demo"] }
+dear-imgui-sdl3 = { version = "0.12.0", features = ["multi-viewport"] }
+dear-imgui-ash = { version = "0.12.0", features = ["multi-viewport-sdl3"] }
+dear-imgui-rs = { version = "0.12.0", features = ["tracing"] }
+dear-implot = { version = "0.12.0", features = ["demo"] }
 env_logger = "0.11.10"
-# gl = "0.14.0"
 glam = "0.32.1"
 glow = "0.17.0"
 image = "0.25.10"
