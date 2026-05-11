@@ -13,6 +13,8 @@ Cargo.lock
 .vscode/
 .jj/
 
+*.mp3
+*.m4a
 imgui.ini
 
 assets/
