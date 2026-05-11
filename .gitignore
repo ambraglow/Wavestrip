@@ -18,3 +18,5 @@ Cargo.lock
 imgui.ini
 
 assets/
+*.txt
+old.*
