@@ -20,8 +20,12 @@
             clang
             llvmPackages.bintools
             rustup
+            zlib
+            vulkan-headers
+            vulkan-loader
+            vulkan-tools
+            moltenvk
             sdl3
-            fd
           ];
 
           RUSTC_VERSION = overrides.toolchain.channel;
@@ -32,8 +36,7 @@
           shellHook = ''
             export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
             export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
-            VULKAN_SDK=$(fd -t d -s "VulkanSDK" ~/) && export VULKAN_SDK
-            source $VULKAN_SDK/*.*.*.*/setup-env.sh
+            source ~/VulkanSDK/1.4.335.1/setup-env.sh
           '';
 
           # Add precompiled library to rustc search path
@@ -41,24 +44,17 @@
             # add libraries here (e.g. pkgs.libvmi)
           ]);
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);  
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (buildInputs ++ nativeBuildInputs);
           LLDB_DEBUGSERVER_PATH = ''/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/Resources/debugserver'';
-
-          # VULKAN_SDK = "~/VulkanSDK/1.4.341.1/macOS";
-
-          # DYLD_LIBRARY_PATH="$VULKAN_SDK/lib:${DYLD_LIBRARY_PATH:-}";
-          # VK_ADD_LAYER_PATH="$VULKAN_SDK/share/vulkan/explicit_layer.d";
-          # VK_ICD_FILENAMES="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json";
-          # VK_DRIVER_FILES="$VULKAN_SDK/share/vulkan/icd.d/MoltenVK_icd.json";
-          # PKG_CONFIG_PATH="$VULKAN_SDK/lib/pkgconfig:$PKG_CONFIG_PATH";
-
-
 
           # Add glibc, clang, glib, and other headers to bindgen search path
           BINDGEN_EXTRA_CLANG_ARGS =
           # Includes normal include path
           (builtins.map (a: ''-I"${a}/include"'') [
-
+            # pkgs.vulkan-headers
+            # pkgs.vulkan-loader
+            # pkgs.vulkan-tools
+            # pkgs.moltenvk
             # add dev libraries here (e.g. pkgs.libvmi.dev)
           ])
           # Includes with special directory paths
