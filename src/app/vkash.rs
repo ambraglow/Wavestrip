@@ -13,6 +13,52 @@ pub struct VulkanContext {
     pub queue: vk::Queue,
     pub command_pool: vk::CommandPool,
 }
+pub struct SwapchainState {
+    pub loader: khr_swapchain::Device,
+    pub swapchain: vk::SwapchainKHR,
+    pub surface_format: vk::SurfaceFormatKHR,
+    pub extent: vk::Extent2D,
+    pub images: Vec<vk::Image>,
+    pub image_views: Vec<vk::ImageView>,
+    pub framebuffers: Vec<vk::Framebuffer>,
+}
+pub struct FrameSync {
+    pub image_available: vk::Semaphore,
+    pub render_finished: vk::Semaphore,
+    pub fence: vk::Fence,
+    pub command_buffer: vk::CommandBuffer,
+}
+pub struct ImguiState {
+    // Ensure registered textures are unregistered before the ImGui context is destroyed.
+    pub _registered_user_textures: Vec<dear_imgui_rs::RegisteredUserTexture>,
+    pub context: dear_imgui_rs::Context,
+    pub plot_context: PlotContext,
+    pub renderer: AshRenderer,
+    pub last_frame: Instant,
+    pub clear_color: [f32; 4],
+    // pub img_tex: dear_imgui_rs::texture::OwnedTextureData,
+    pub tex_size: (u32, u32),
+    pub frame: u32,
+    pub external: Option<ExternalTexture>,
+}
+pub struct VulkanState {
+    pub ctx: VulkanContext,
+    pub render_pass: vk::RenderPass,
+    pub swapchain: SwapchainState,
+    pub frames: Vec<FrameSync>,
+    pub images_in_flight: Vec<vk::Fence>,
+    pub frame_index: usize,
+    pub swapchain_dirty: bool,
+}
+pub struct ExternalTexture {
+    pub tex_id: dear_imgui_rs::TextureId,
+    pub image: vk::Image,
+    pub image_mem: vk::DeviceMemory,
+    pub image_view: vk::ImageView,
+    pub sampler_nearest: vk::Sampler,
+    pub sampler_linear: vk::Sampler,
+    pub use_linear_sampler: bool,
+}
 
 impl VulkanContext {
     pub fn new(window: &sdl3::video::Window, title: &str) -> anyhow::Result<Self> {
@@ -32,7 +78,7 @@ impl VulkanContext {
             .map(|e| CString::new(e).unwrap())
             .collect::<Vec<_>>();
 
-        println!("{:?}", meow);
+        // println!("{:?}", meow);
 
         let extension_names = [
             vk::KHR_GET_PHYSICAL_DEVICE_PROPERTIES2_NAME.as_ptr(),
@@ -90,16 +136,6 @@ impl Drop for VulkanContext {
             self.instance.destroy_instance(None);
         }
     }
-}
-
-pub struct SwapchainState {
-    pub loader: khr_swapchain::Device,
-    pub swapchain: vk::SwapchainKHR,
-    pub surface_format: vk::SurfaceFormatKHR,
-    pub extent: vk::Extent2D,
-    pub images: Vec<vk::Image>,
-    pub image_views: Vec<vk::ImageView>,
-    pub framebuffers: Vec<vk::Framebuffer>,
 }
 
 impl SwapchainState {
@@ -193,13 +229,6 @@ impl SwapchainState {
         *self = Self::new(ctx, window, render_pass, new_format)?;
         Ok(())
     }
-}
-
-pub struct FrameSync {
-    pub image_available: vk::Semaphore,
-    pub render_finished: vk::Semaphore,
-    pub fence: vk::Fence,
-    pub command_buffer: vk::CommandBuffer,
 }
 
 pub fn create_frame_sync(
@@ -731,40 +760,6 @@ pub fn create_external_rgba_texture(
         sampler_linear,
         use_linear_sampler: false,
     })
-}
-
-pub struct ImguiState {
-    // Ensure registered textures are unregistered before the ImGui context is destroyed.
-    pub _registered_user_textures: Vec<dear_imgui_rs::RegisteredUserTexture>,
-    pub context: Context,
-    pub plot_context: PlotContext,
-    pub renderer: AshRenderer,
-    pub last_frame: Instant,
-    pub clear_color: [f32; 4],
-    pub img_tex: dear_imgui_rs::texture::OwnedTextureData,
-    pub tex_size: (u32, u32),
-    pub frame: u32,
-    pub external: Option<ExternalTexture>,
-}
-
-pub struct VulkanState {
-    pub ctx: VulkanContext,
-    pub render_pass: vk::RenderPass,
-    pub swapchain: SwapchainState,
-    pub frames: Vec<FrameSync>,
-    pub images_in_flight: Vec<vk::Fence>,
-    pub frame_index: usize,
-    pub swapchain_dirty: bool,
-}
-
-pub struct ExternalTexture {
-    pub tex_id: dear_imgui_rs::TextureId,
-    pub image: vk::Image,
-    pub image_mem: vk::DeviceMemory,
-    pub image_view: vk::ImageView,
-    pub sampler_nearest: vk::Sampler,
-    pub sampler_linear: vk::Sampler,
-    pub use_linear_sampler: bool,
 }
 
 impl Drop for VulkanState {
