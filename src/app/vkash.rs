@@ -1,39 +1,4 @@
-//! SDL3 + Vulkan (Ash) multi-viewport example (native only).
-//!
-//! This demonstrates driving Dear ImGui with:
-//! - SDL3 for window + events
-//! - Official SDL3 platform backend (via `dear-imgui-sdl3`)
-//! - Rust Vulkan renderer backend (`dear-imgui-ash`) with SDL3 multi-viewport callbacks
-//!
-//! Run with:
-//!   cargo run -p dear-imgui-examples --bin sdl3_ash_multi_viewport --features sdl3-ash-multi-viewport
-//!
-//! Notes:
-//! - This is experimental and intended for native desktop targets.
-//! - Secondary viewports create their own Vulkan `SurfaceKHR` + swapchain.
-//! - Per-viewport surface creation is delegated to SDL3 via `Platform_CreateVkSurface`.
-
-use std::error::Error;
-use std::ffi::CString;
-use std::fmt::Debug;
-use std::time::Instant;
-
-use anyhow::{Ok, bail};
-use ash::khr::{surface as khr_surface, swapchain as khr_swapchain};
-use ash::mvk::macos_surface;
-use ash::vk::{
-    API_VERSION_1_3, Handle, KHR_PORTABILITY_SUBSET_NAME, MacOSSurfaceCreateInfoMVK,
-    PFN_vkCreateMacOSSurfaceMVK, SurfaceKHR,
-};
-use ash::{Device, Entry, Instance, vk};
-use dear_imgui_ash::{AshRenderer, Options as AshOptions};
-use dear_imgui_rs::{Condition, ConfigFlags, Context};
-use dear_imgui_sdl3::{self as imgui_sdl3_backend, GamepadMode};
-use dear_implot::PlotContext;
-use sdl3::event::Event;
-use sdl3::keyboard::Keycode;
-use sdl3::video::{SwapInterval, VkInstance, VkSurfaceKHR, WindowPos};
-use std::matches;
+use crate::app::*;
 
 pub const FRAMES_IN_FLIGHT: usize = 2;
 
