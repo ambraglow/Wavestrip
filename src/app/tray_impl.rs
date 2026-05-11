@@ -1,26 +1,26 @@
 use crate::app::*;
 
 impl AppTray {
-    pub fn update_stream(&self) -> Result<()> {
-        log::info!(
-            "loading file: {:?}",
-            self.playback.filename.lock().unwrap().to_string()
-        );
-        let mut _old_length = self
-            .playback
-            .audio_length
-            .lock()
-            .expect("couldn't lock mutex");
+    pub fn update_stream(&self) -> anyhow::Result<()> {
+        let filename = self.playback.filename.lock().unwrap().to_string();
+        log::info!("loading file: {:?}", filename);
 
-        let file = std::fs::File::open(self.playback.filename.lock().unwrap().to_string())
-            .context("invalid filename")?;
+        self.playback.samples_buffer.lock().unwrap().clear();
+        self.playback.bins_buffer.lock().unwrap().clear();
+        self.playback.window_buffer.lock().unwrap().clear();
 
-        let decoder = Decoder::try_from(file).unwrap();
-        *self.playback.sample_rate.lock().unwrap() = decoder.sample_rate();
+        let file = std::fs::File::open(&filename).context("invalid filename")?;
+        let decoder = Decoder::try_from(file)?;
+
+        let sample_rate = decoder.sample_rate();
+        *self.playback.sample_rate.lock().unwrap() = sample_rate;
 
         let collected_samples = decoder
-            .resample_into_fixed_source(*self.playback.sample_rate.lock().unwrap(), nz!(1))
+            .resample_into_fixed_source(sample_rate, nz!(1))
             .collect::<Vec<f32>>();
+
+        *self.playback.audio_length.lock().unwrap() =
+            Duration::from_secs_f64(collected_samples.len() as f64 / sample_rate.get() as f64);
 
         self.playback
             .samples_buffer
@@ -28,13 +28,11 @@ impl AppTray {
             .unwrap()
             .append(&mut collected_samples.clone());
 
-        let samples_buffer = SamplesBuffer::new(
-            nz!(1),
-            *self.playback.sample_rate.lock().unwrap(),
-            collected_samples,
-        );
+        self.playback
+            .player
+            .append(SamplesBuffer::new(nz!(1), sample_rate, collected_samples));
 
-        self.playback.player.append(samples_buffer);
+        self.playback.player.pause();
 
         Ok(())
     }
@@ -60,6 +58,7 @@ impl AppTray {
             mixer,
             decoder,
             samples_buffer,
+            window_buffer: Mutex::new(Vec::new()),
             bins_buffer: Mutex::new(Vec::new()),
             filename,
             sample_rate,
@@ -72,7 +71,8 @@ impl AppTray {
             fft_step: AtomicUsize::new(2048),
             fft_window: AtomicUsize::new(1),
             show_demo_window: AtomicBool::new(false),
-            start_playback_thread: AtomicBool::new(false),
+            start_playback: AtomicBool::new(false),
+            stop_playback: AtomicBool::new(false),
         }
     }
 }

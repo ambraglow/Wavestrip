@@ -1,144 +1,203 @@
 use anyhow::Ok;
+use crossbeam::channel::Receiver;
+use crossbeam::channel::Sender;
 use dear_imgui_rs::*;
-use dear_imgui_sdl3::{process_sys_event, sdl3_poll_event_ll};
 use dear_implot::*;
 use num_complex::{Complex32, ComplexFloat};
-use std::num::NonZero;
-
-use rodio_experiments::Decoder;
-use rodio_experiments::nz;
-use rodio_experiments::{DynamicSourceExt, Source, buffer::SamplesBuffer};
+use rayon::iter::*;
 use rustfft::num_traits::ToPrimitive;
-use sdl3::sys::events::SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED;
-use sdl3::{
-    EventPump,
-    sys::events::{SDL_EVENT_QUIT, SDL_EVENT_WINDOW_CLOSE_REQUESTED},
-};
+use sdl3::EventPump;
+use sdl3::event::EventType::Last;
+use sdl3::keyboard::Scancode::U;
+use std::ops::Div;
+use std::ops::Rem;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use std::vec;
 use std::{
-    convert::TryFrom,
     ops::Not,
     thread::{Builder, JoinHandle},
     time::Instant,
     u64,
 };
+use tracy_client::span;
 
 use crate::app::App;
+use crate::app::AppTray;
 use crate::app::vkash::*;
 use crate::dsp::windows;
 use crate::dsp::{fourier::Fourier, utils::PowerOfTwo, windows::Window};
 
+type MainChannels = (
+    Sender<(Vec<Complex32>, Vec<f32>)>,
+    Receiver<(Vec<Complex32>, Vec<f32>)>,
+);
+
 impl App<Vec<Complex32>, Vec<f32>> {
-    pub fn playback_thread(&mut self) -> anyhow::Result<JoinHandle<()>> {
+    pub fn bench_thread(&mut self) -> anyhow::Result<JoinHandle<()>> {
+        self.tray.update_stream()?;
+        log::info!("stream updated");
+
         let tx_clone = self.channels.0.clone();
         let tray = self.tray.clone();
-
-        let file = std::fs::File::open(tray.filename.lock().unwrap().to_string()).unwrap();
-        let stream = Decoder::try_from(file).unwrap();
-        let source_sample_rate = NonZero::new(stream.sample_rate().get()).unwrap();
-        let stream_samples = stream
-            .resample_into_fixed_source(source_sample_rate, nz!(1))
-            .collect::<Vec<f32>>();
+        let source_sample_rate = self.tray.playback.sample_rate.lock().unwrap().get();
 
         let meow = Builder::new()
             .name("fft".to_string())
             .spawn(move || {
-                let step_interval = (tray.fft_step.load(std::sync::atomic::Ordering::SeqCst)
-                    / source_sample_rate.get() as usize)
-                    * 1000;
+                let span = span!("playback thread");
 
-                let samples_buffer =
-                    SamplesBuffer::new(nz!(1), source_sample_rate, stream_samples.clone());
+                let player = &tray.playback.player;
 
-                let mut mixer = rodio_experiments::DeviceSinkBuilder::open_default_sink().unwrap();
-                mixer.log_on_drop(false);
+                let mut step_interval = (tray.fft_step.load(std::sync::atomic::Ordering::SeqCst)
+                    as f32
+                    / source_sample_rate as f32)
+                    * 1000f32;
 
-                let player = rodio_experiments::Player::connect_new(mixer.mixer());
-                player.append(samples_buffer);
+                let stream_samples = tray.playback.samples_buffer.lock().unwrap();
 
                 let mut last_sample: u64 = 0;
-                let mut pos_sample: u64 = 0;
+                let mut sample_position: u64 = 0;
+
+                let mut fraction_step: usize =
+                    tray.fft_step.load(std::sync::atomic::Ordering::SeqCst);
+
+                let mut player_position = player.get_pos();
+                let mut last_player_position = player.get_pos();
+                let mut sample_interval: usize = 0;
+
+                let mut hop_interval = 0.0;
+                let mut a: Vec<f32> = Vec::new();
+                let mut audio_out: Vec<f32> = Vec::new();
+                let mut out: Vec<Complex32> = Vec::new();
 
                 tray.status.store(true, std::sync::atomic::Ordering::SeqCst);
 
-                loop {
-                    player.play();
+                player.set_volume(0.1);
 
+                loop {
+                    let l = span!("loop iteration");
+                    player.play();
                     while !player.empty() {
                         if tray.status.load(std::sync::atomic::Ordering::SeqCst) == false {
+                            log::debug!(
+                                "fft thread {:?} received stop signal",
+                                thread::current().id()
+                            );
+                            player.stop();
                             break;
                         }
-                        let player_position = player.get_pos();
-                        while player_position.as_secs() <= player_position.as_secs() + 1 {
-                            let fraction_step: usize =
-                                tray.fft_step.load(std::sync::atomic::Ordering::SeqCst);
+                        let player_loop = span!("player loop iteration");
 
-                            pos_sample = (player.get_pos().as_millis().to_u64().unwrap()
-                                * source_sample_rate.get() as u64)
-                                / 1000;
-                            thread::sleep(Duration::from_millis(step_interval as u64 + 2));
+                        thread::sleep(Duration::from_millis(hop_interval as u64));
 
-                            if pos_sample > last_sample {
-                                let len = pos_sample.to_usize().unwrap()
-                                    - last_sample.to_usize().unwrap();
+                        fraction_step = tray.fft_step.load(std::sync::atomic::Ordering::SeqCst);
+                        step_interval =
+                            (fraction_step as f32 / source_sample_rate as f32) * 1000f32;
 
-                                if len < fraction_step {
+                        sample_position = (player.get_pos().as_millis().to_u64().unwrap()
+                            * source_sample_rate as u64)
+                            / 1000;
+
+                        if sample_position > stream_samples.len() as u64 {
+                            // stale position from the previous song — restart tracking
+                            last_sample = 0;
+                            sample_position = 0;
+                        }
+
+                        sample_interval =
+                            sample_position.to_usize().unwrap() - last_sample.to_usize().unwrap();
+
+                        let mut hop = (fraction_step).max(1);
+                        if fraction_step >= 4096 {
+                            hop = 1024;
+                        }
+
+                        hop_interval = (hop as f32 / source_sample_rate as f32) * 1000f32;
+
+                        if sample_interval >= hop {
+                            tray.playback.bins_buffer.lock().unwrap().clear();
+                            // let _ = bg_channels.0.try_send(BgMsg::Forward { step_interval });
+
+                            let mut window_buffer = tray.playback.window_buffer.lock().unwrap();
+                            if window_buffer.len() != fraction_step {
+                                window_buffer.resize(fraction_step, 0.0);
+                            }
+
+                            if sample_position > stream_samples.len() as u64 {
+                                last_sample = 0;
+                                sample_position = 0;
+                            }
+
+                            const MAX_FRAMES_PER_ROUND: usize = 5;
+                            let mut produced = 0;
+
+                            while produced < MAX_FRAMES_PER_ROUND
+                                && last_sample as usize + hop <= sample_position as usize
+                            {
+                                let frame_start = last_sample as usize;
+                                let frame_end = frame_start + hop;
+
+                                if frame_end > stream_samples.len() {
                                     break;
-                                } else {
-                                    let mut a = stream_samples[last_sample.to_usize().unwrap()
-                                        ..pos_sample.to_usize().unwrap()]
-                                        .to_vec()
-                                        .iter()
-                                        .take(fraction_step)
-                                        .map(|a| *a)
-                                        .collect::<Vec<f32>>();
-
-                                    if a.iter().all(|a| *a != 0.0) {
-                                        match tray
-                                            .fft_window
-                                            .load(std::sync::atomic::Ordering::SeqCst)
-                                        {
-                                            0 => None,
-                                            1 => Some(a.blackman()),
-                                            3 => Some(a.hanning()),
-                                            4 => Some(a.rectangular(52)),
-                                            _ => None,
-                                        };
-
-                                        // a.append(&mut vec![0f32; 2048 - fraction_step]);
-
-                                        let b: Vec<f32> = a.clone();
-
-                                        let mut out = a
-                                            .iter()
-                                            .map(|a| Complex32::new(*a, 0.0))
-                                            .collect::<Vec<Complex32>>();
-
-                                        out.fft();
-
-                                        log::debug!(
-                                            "points spacing: {:?} out len: {:?}",
-                                            (source_sample_rate.get() as u64 / out.len() as u64),
-                                            out.len()
-                                        );
-
-                                        tx_clone.send((out, b)).unwrap();
-                                    }
                                 }
 
-                                log::debug!("{:?} {:?}", pos_sample, last_sample);
+                                a = stream_samples[frame_start..frame_end].to_vec();
+
+                                for j in 0..(fraction_step - hop) {
+                                    window_buffer[j] = window_buffer[j + hop];
+                                }
+                                for j in 0..hop {
+                                    window_buffer[fraction_step - hop + j] = a[j];
+                                }
+
+                                a = window_buffer.clone();
+
+                                match tray.fft_window.load(std::sync::atomic::Ordering::SeqCst) {
+                                    0 => (),
+                                    1 => a.blackman(),
+                                    3 => a.hanning(),
+                                    4 => a.rectangular(fraction_step / 2),
+                                    _ => (),
+                                };
+
+                                audio_out = a.clone();
+
+                                out = a
+                                    .iter()
+                                    .map(|a| Complex32::new(*a, 0.0))
+                                    .collect::<Vec<Complex32>>();
+
+                                out.ditfft(&mut Vec::new());
+
+                                tray.playback.bins_buffer.lock().unwrap().push(out.clone());
+
+                                log::debug!(
+                                    "sending frame with start: {frame_start} - end: {frame_end} - size: {:?}", frame_end - frame_start
+                                );
+                                tx_clone.send((out.clone(), audio_out.clone())).unwrap();
+
+                                produced += 1;
+                                last_sample += hop as u64;
                             }
-                            last_sample = pos_sample.clone();
+
+                            drop(window_buffer);
+                        } else {
+                            break;
                         }
                     }
                     if tray.status.load(std::sync::atomic::Ordering::SeqCst) == false {
+                        log::debug!(
+                            "fft thread {:?} received stop signal",
+                            thread::current().id()
+                        );
+                        player.stop();
                         break;
                     }
                     if player.empty() {
-                        println!("player is empty!");
-                        tray.start_playback_thread
+                        log::debug!("player is empty!");
+                        tray.start_playback
                             .store(false, std::sync::atomic::Ordering::SeqCst);
                         break;
                     }
@@ -146,37 +205,24 @@ impl App<Vec<Complex32>, Vec<f32>> {
             })
             .unwrap();
 
-        println!("thread: {:?}", meow.thread().id());
-
-        // println!("joinhandle: {:?}", meow);
+        log::debug!(
+            "thread spawned: {:?} {:?}",
+            meow.thread().name().unwrap(),
+            meow.thread().id()
+        );
 
         Ok(meow)
     }
 
     pub fn main_loop(&mut self) -> anyhow::Result<()> {
+        let _span = span!("main loop");
+
         let mut ft = (vec![Complex32::new(0.0, 0.0); 1], vec![0f32; 1]);
-        let file = std::fs::File::open(self.tray.filename.lock().unwrap().to_string()).unwrap();
-        let stream = Decoder::try_from(file).unwrap();
-        let source_sample_rate = stream.sample_rate();
-        drop(stream);
+        let mut _current_filename = "".to_string();
 
-        let _ = self.init_external_texture();
-
-        let mut cfg = dear_imgui_rs::Theme::default();
-        cfg.colors = vec![ColorOverride {
-            id: StyleColor::PlotLines,
-            rgba: [1.0, 0.747, 0.0, 1.0],
-        }];
-        cfg.apply_to_context(&mut self.imgui.context);
-
-        dear_implot::push_colormap(Colormap::Dark);
-
-        println!("init passed!");
-
-        self.imgui
-            .context
-            .io_mut()
-            .set_display_size([1200.0, 720.0]);
+        // self.init_external_texture()?;
+        self.imgui_config();
+        self.imgui.context.io_mut();
 
         let _event_pump: EventPump = self.sdl_context.event_pump()?;
         'main: loop {
@@ -185,81 +231,69 @@ impl App<Vec<Complex32>, Vec<f32>> {
             self.imgui.last_frame = now;
             self.imgui.context.io_mut().set_delta_time(dt);
 
-            // 1) Poll SDL3 events and feed ImGui
-            while let Some(event) = sdl3_poll_event_ll() {
-                if process_sys_event(&event) {
-                    // ImGui consumed the event; continue if you do not need it.
-                }
-                // Handle your own events or quit logic as needed...
-                match event.event_type() {
-                    SDL_EVENT_QUIT => {
-                        break 'main;
-                    }
-                    SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED => unsafe {
-                        if event.window.windowID == self.window.id() {
-                            let (w, h) = self.window.size_in_pixels();
-                            if w > 0 && h > 0 {
-                                self.vk.swapchain_dirty = true;
-                            }
-                        }
-                    },
-                    SDL_EVENT_WINDOW_CLOSE_REQUESTED => unsafe {
-                        if event.window.windowID == self.window.id() {
-                            break 'main;
-                        }
-                    },
-                    _default => (),
-                }
+            if self.handle_events() {
+                self.tray
+                    .status
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                break 'main;
             }
 
-            // println!("before the playback if");
             if self
                 .tray
-                .start_playback_thread
+                .start_playback
                 .load(std::sync::atomic::Ordering::SeqCst)
                 == true
             {
                 if self.second_thread.is_none() {
-                    println!("spawned dft thread");
-                    match self.playback_thread() {
-                        std::result::Result::Ok(handle) => {
-                            self.second_thread = Some(handle);
+                    log::info!("spawning compute thread");
+
+                    if let Err(e) = self.bench_thread().map(|(thread)| {
+                        self.second_thread = Some(thread);
+                        self.tray
+                            .start_playback
+                            .store(false, std::sync::atomic::Ordering::SeqCst);
+                    }) {
+                        if self.tray.status.load(std::sync::atomic::Ordering::SeqCst) != false {
+                            log::error!("{}", e);
+                            self.tray.playback.filename.lock().unwrap().clear();
                             self.tray
-                                .start_playback_thread
+                                .playback
+                                .filename
+                                .lock()
+                                .unwrap()
+                                .push_str(format!("./assets/").as_str());
+
+                            self.tray
+                                .status
                                 .store(false, std::sync::atomic::Ordering::SeqCst);
                         }
-                        Err(_) => println!("new glenn level explosion"),
                     }
                 } else {
-                    println!("joining other thread and starting another");
+                    log::info!("joining other thread and starting another");
                     self.tray
                         .status
                         .store(false, std::sync::atomic::Ordering::SeqCst);
-                    match self.playback_thread() {
-                        std::result::Result::Ok(handle) => {
-                            self.second_thread = Some(handle);
+
+                    match self.bench_thread() {
+                        std::result::Result::Ok((main_handle)) => {
+                            self.second_thread = Some(main_handle);
                             self.tray
-                                .start_playback_thread
+                                .start_playback
                                 .store(false, std::sync::atomic::Ordering::SeqCst);
                         }
-                        Err(_) => log::debug!("new glenn level explosion"),
+                        Err(_) => panic!("new glenn level explosion"),
                     }
                 }
             } else {
                 if self.second_thread.is_some() {
-                    match self.channels.1.try_recv() {
-                        std::result::Result::Ok(msg) => ft = msg,
-                        Err(_) => log::debug!("no message received"),
+                    if !self.tray.playback.player.empty() {
+                        match self.channels.1.try_recv() {
+                            std::result::Result::Ok(msg) => ft = msg,
+                            Err(_) => log::debug!("no message received"),
+                        }
                     }
                 }
-                // println!(
-                //     "start playback thread {:?}",
-                //     self.tray
-                //         .start_playback_thread
-                //         .load(std::sync::atomic::Ordering::SeqCst)
-                // );
             }
-            // println!("after the playback if");
 
             let mut step = self.tray.fft_step.load(std::sync::atomic::Ordering::SeqCst) as i32;
             let mut window_butt = self
@@ -269,7 +303,7 @@ impl App<Vec<Complex32>, Vec<f32>> {
 
             dear_imgui_sdl3::sdl3_new_frame(&mut self.imgui.context);
 
-            self.update_texture();
+            // self.update_texture();
             let ui = self.imgui.context.frame();
             ui.dockspace_over_main_viewport();
 
@@ -280,12 +314,6 @@ impl App<Vec<Complex32>, Vec<f32>> {
             ui.set_next_window_viewport(viewport.id().into());
             let pos = viewport.pos();
             let size = viewport.size();
-
-            let window_flags: WindowFlags = WindowFlags::NO_COLLAPSE
-                | WindowFlags::NO_RESIZE
-                | WindowFlags::NO_MOVE
-                | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS
-                | WindowFlags::NO_NAV_FOCUS;
 
             if let Some(_bar) = ui.begin_main_menu_bar() {
                 let mut _show_demo_window = self
@@ -324,23 +352,41 @@ impl App<Vec<Complex32>, Vec<f32>> {
 
             let mut _playback = self
                 .tray
-                .start_playback_thread
+                .start_playback
                 .load(std::sync::atomic::Ordering::SeqCst);
 
             ui.window("Settings")
-                .flags(window_flags)
-                .position(pos, Condition::Always)
-                .size(size, Condition::Always)
+                .flags(self.window_flags)
+                .position(pos, Condition::FirstUseEver)
+                .size(size, Condition::FirstUseEver)
                 .build(|| {
                     let group_token = ui.begin_group();
+                    ui.separator();
+                    ui.input_text("file", self.tray.playback.filename.lock().as_mut().unwrap())
+                        .build();
+                    ui.separator();
+                    let mut audio_len = self
+                        .tray
+                        .playback
+                        .audio_length
+                        .lock()
+                        .unwrap()
+                        .as_secs_f64();
+                    ui.text(format!(
+                        "progress: {:#?}:{:02?}/{:?}:{:?}",
+                        self.tray.playback.player.get_pos().as_secs().div(60),
+                        self.tray.playback.player.get_pos().as_secs_f64().rem(60f64) as u64,
+                        audio_len.div(60f64) as u64,
+                        audio_len.rem(60f64) as u64
+                    ));
                     ui.text(format!(
                         "source audio sample rate: {:?}",
-                        source_sample_rate.get()
+                        self.tray.playback.sample_rate.try_lock().unwrap().get()
                     ));
-                    ui.slider_i32("fft_size", &mut step, 1, 2048);
+                    ui.separator();
+                    ui.slider_i32("fft_size", &mut step, 1, 8192);
                     step.round_to_2n();
                     ui.separator();
-                    // ui.checkbox("windowing", &mut window_butt);
                     if let Some(combo_box) =
                         ui.begin_combo("FFT window", windows::Types::VALUES[window_butt])
                     {
@@ -357,46 +403,50 @@ impl App<Vec<Complex32>, Vec<f32>> {
                         _playback = !_playback;
                     }
                     ui.separator();
+                    if ui.button("stop") {
+                        _playback = !_playback;
+                    }
                     group_token.end();
 
-                    if let std::result::Result::Ok(token) = SubplotGrid::new("Plots", 2, 2)
-                        .with_size([1200.0, 600.0])
+                    // TODO: spectrogram;
+                    // ui.image(&mut *self.img_tex, [256.0, 256.0]);
+                });
+
+            ui.window("Graphs and visualization")
+                .flags(self.window_flags)
+                .position(pos, Condition::FirstUseEver)
+                .size(size, Condition::FirstUseEver)
+                .build(|| {
+                    let avail = ui.content_region_avail();
+
+                    if let std::result::Result::Ok(token) = SubplotGrid::new("Plots", 2, 1)
+                        .with_size(avail)
                         .with_flags(SubplotFlags::NO_TITLE)
                         .begin()
                     {
                         let x = (0..ft.1.len()).map(|a| a as f64).collect::<Vec<_>>();
-
-                        let audio_1 = ft.1.iter().map(|a| *a as f64).collect::<Vec<_>>();
+                        let audio = ft.1.iter().map(|a| *a as f64).collect::<Vec<_>>();
 
                         let dft_size = ft.0.len();
-                        // println!("dft size {:?}", dft_size);
 
                         if dft_size > 2 {
-                            let mut frequency_bins = ft.0[1..ft.0.len() / 2]
+                            let _s = span!("fft data and graph");
+
+                            let mut frequency_bins = ft.0[1..ft.0.len() / 4]
                                 .iter()
-                                .map(|a| a.abs().powf(2.0).log10() as f64 * 10f64)
+                                .map(|a| a.abs().log10() as f64 * 20f64)
                                 .collect::<Vec<_>>();
-
-                            let max_db = frequency_bins
-                                .iter()
-                                .copied()
-                                .max_by(|a, b| {
-                                    a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-                                })
-                                .unwrap();
-
-                            frequency_bins = frequency_bins
-                                .iter()
-                                .map(|a| *a - max_db)
-                                .collect::<Vec<f64>>();
 
                             let dft_x: Vec<f64> = (0..frequency_bins.len() as i32)
                                 .map(|a| {
-                                    (source_sample_rate.get() as f64 * a as f64) / dft_size as f64
+                                    (self.tray.playback.sample_rate.try_lock().unwrap().get()
+                                        as f64
+                                        * a as f64)
+                                        / dft_size as f64
                                 })
                                 .collect();
 
-                            if let Some(plot_token) = plot_ui.begin_plot("Radix-2 FFT") {
+                            if let Some(plot_token) = plot_ui.begin_plot("Frequencies") {
                                 plot_ui.setup_y_axis(
                                     YAxis::Y1,
                                     "Magnitude (dB)".into(),
@@ -404,16 +454,16 @@ impl App<Vec<Complex32>, Vec<f32>> {
                                 );
                                 plot_ui.setup_x_axis(
                                     XAxis::X1,
-                                    "Frequency log".into(),
+                                    "Frequencies (Hz)".into(),
                                     AxisFlags::AUTO_FIT,
                                 );
                                 plot_ui.setup_y_axis_limits(
                                     YAxis::Y1,
-                                    -150.0,
-                                    20.0,
+                                    -80.0,
+                                    100.0,
                                     PlotCond::Always,
                                 );
-                                // plot_ui.setup_x_axis_scale(XAxis::X1, 2);
+                                plot_ui.setup_x_axis_scale(XAxis::X1, 2);
                                 LinePlot::new("", &dft_x, &frequency_bins).plot();
                                 plot_token.end();
                             }
@@ -426,27 +476,9 @@ impl App<Vec<Complex32>, Vec<f32>> {
                             if let Some(plot_token) = plot_ui.begin_plot("Audio") {
                                 plot_ui.setup_x_axis(XAxis::X1, "".into(), AxisFlags::AUTO_FIT);
                                 // plot_ui.setup_y_axis(YAxis::Y1, "".into(), AxisFlags::AUTO_FIT);
-                                LinePlot::new("", &x, &audio_1).plot();
+                                LinePlot::new("", &x, &audio).plot();
                                 plot_token.end();
                             }
-                            let mut window_data = vec![1f32; audio_1.len()];
-                            window_data.blackman();
-                            // window_data.iter_mut().for_each(|a| *a = a);
-
-                            if let Some(plot_token) = plot_ui.begin_plot("Window data") {
-                                plot_ui.setup_x_axis(XAxis::X1, "".into(), AxisFlags::AUTO_FIT);
-                                // plot_ui.setup_y_axis(YAxis::Y1, "".into(), AxisFlags::AUTO_FIT);
-                                LinePlot::new(
-                                    "",
-                                    &x,
-                                    &window_data.iter().map(|a| *a as f64).collect::<Vec<f64>>(),
-                                )
-                                .plot();
-                                plot_token.end();
-                            }
-                            // plot_ui
-                            //     .heatmap_plot("rust is a spectrum", &frequency_bins, n_freq, n_freq)
-                            //     .unwrap();
                         }
 
                         token.end();
@@ -454,7 +486,7 @@ impl App<Vec<Complex32>, Vec<f32>> {
                 });
 
             self.tray
-                .start_playback_thread
+                .start_playback
                 .store(_playback, std::sync::atomic::Ordering::SeqCst);
 
             self.tray

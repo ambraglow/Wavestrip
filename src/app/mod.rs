@@ -40,8 +40,8 @@ pub mod tray_impl;
 pub mod vkash;
 
 pub struct App<T: Clone, E: Clone> {
-    pub vk: VulkanState,
     pub imgui: ImguiState,
+    pub vk: VulkanState,
     pub sdl_context: sdl3::Sdl,
     pub sdl_video: sdl3::VideoSubsystem,
     pub window: sdl3::video::Window,
@@ -61,7 +61,8 @@ pub struct AppTray {
     pub fft_step: AtomicUsize,
     pub fft_window: AtomicUsize,
     pub show_demo_window: AtomicBool,
-    pub start_playback_thread: AtomicBool,
+    pub start_playback: AtomicBool,
+    pub stop_playback: AtomicBool,
 }
 pub struct Playback {
     pub player: rodio_experiments::Player,
@@ -69,6 +70,7 @@ pub struct Playback {
     pub decoder: Mutex<Decoder<BufReader<File>>>,
     pub samples_buffer: Mutex<Vec<f32>>,
     pub bins_buffer: Mutex<Vec<Vec<Complex32>>>,
+    pub window_buffer: Mutex<Vec<f32>>,
     pub filename: Mutex<String>,
     pub sample_rate: Mutex<NonZero<u32>>,
     pub audio_length: Mutex<Duration>,

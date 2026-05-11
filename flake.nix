@@ -21,10 +21,7 @@
             llvmPackages.bintools
             rustup
             zlib
-            vulkan-headers
-            vulkan-loader
-            vulkan-tools
-            moltenvk
+            # rust-analyzer
             sdl3
           ];
 
@@ -36,7 +33,7 @@
           shellHook = ''
             export PATH=$PATH:''${CARGO_HOME:-~/.cargo}/bin
             export PATH=$PATH:''${RUSTUP_HOME:-~/.rustup}/toolchains/$RUSTC_VERSION-x86_64-unknown-linux-gnu/bin/
-            source ~/VulkanSDK/1.4.335.1/setup-env.sh
+            source ~/VulkanSDK/1.4.357.1/setup-env.sh
           '';
 
           # Add precompiled library to rustc search path
@@ -51,10 +48,10 @@
           BINDGEN_EXTRA_CLANG_ARGS =
           # Includes normal include path
           (builtins.map (a: ''-I"${a}/include"'') [
-            # pkgs.vulkan-headers
-            # pkgs.vulkan-loader
-            # pkgs.vulkan-tools
-            # pkgs.moltenvk
+            pkgs.vulkan-headers
+            pkgs.vulkan-loader
+            pkgs.vulkan-tools
+            pkgs.moltenvk
             # add dev libraries here (e.g. pkgs.libvmi.dev)
           ])
           # Includes with special directory paths

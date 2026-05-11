@@ -9,9 +9,6 @@ use crate::app::*;
 
 impl<T: Clone, E: Clone> Drop for App<T, E> {
     fn drop(&mut self) {
-        unsafe {
-            SDL_Quit();
-        }
         dear_imgui_sdl3::shutdown(&mut self.imgui.context);
         // self.destroy_external_texture();
     }
@@ -117,11 +114,7 @@ impl App<Vec<Complex32>, Vec<f32>> {
         let channels = crossbeam::channel::unbounded::<(Vec<Complex32>, Vec<f32>)>();
         let tray = AppTray::new();
 
-        let window_flags: WindowFlags = WindowFlags::NO_COLLAPSE
-            | WindowFlags::NO_RESIZE
-            | WindowFlags::NO_MOVE
-            | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS
-            | WindowFlags::NO_NAV_FOCUS;
+        let window_flags: WindowFlags = WindowFlags::empty();
 
         Ok(App {
             imgui: ImguiState {
