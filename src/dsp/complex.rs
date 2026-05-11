@@ -1,9 +1,43 @@
-use crate::app::FRACTION_STEP;
-use crate::fft::fourier::ditfft;
-use crate::fft::utils::even_odd_split;
-use crate::fft::*;
-use crate::fourier::Fourier;
-use rand::RngExt;
+use crate::dsp::fourier::Fourier;
+use crate::dsp::utils::even_odd_split;
+use crate::dsp::*;
+
+pub struct RandComplex<T> {
+    complex: T,
+    step: T,
+}
+
+impl RandComplex<f32> {
+    pub fn default(step: f32, opt_complex: Option<f32>) -> Self {
+        if let Some(complex) = opt_complex {
+            RandComplex {
+                complex: complex,
+                step: step,
+            }
+        } else {
+            RandComplex {
+                complex: 0.0,
+                step: step,
+            }
+        }
+    }
+    pub fn random_vec(samples_nr: usize, step: f32) -> Option<Vec<f32>> {
+        let complex = RandComplex::default(step, None);
+        Some(complex.take(samples_nr).collect())
+    }
+}
+
+impl Iterator for RandComplex<f32> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut rng = rand::rng();
+        // rng.reseed().unwrap();
+        self.step = rng.random_range(0.01..1.0);
+        self.complex = self.step;
+        Some(self.complex)
+    }
+}
 
 impl Fourier for Vec<Complex32> {
     fn simple_dft(&mut self) -> Vec<Complex32> {
@@ -49,14 +83,13 @@ impl Fourier for Vec<Complex32> {
         return self.to_vec();
     }
     fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32> {
-        let N = self.len();
+        let n = self.len();
+        let fft_n = twiddle_factors_table.len();
         // let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
         // let mut out_vec: Vec<Complex32> = vec![Complex32::new(0f32, 0f32); N + 1];
         // out_vec.append(&mut x.clone());
 
-        // println!("N: {:?}", N);
-
-        if N <= 1 {
+        if n <= 1 {
             return self.to_vec();
         }
 
@@ -66,93 +99,20 @@ impl Fourier for Vec<Complex32> {
         odds = odds.ditfft(&twiddle_factors_table);
 
         let mut t: Complex32;
-        for k in 0..N / 2 {
-            if N / 2 != FRACTION_STEP / 2 {
+        for k in 0..n / 2 {
+            if n / 2 != fft_n / 2 {
                 // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
-                t = twiddle_factors_table[FRACTION_STEP - N + k] * odds[k];
+                t = twiddle_factors_table[fft_n - n + k] * odds[k];
             } else {
                 // 0..1024
-                println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
+                log::debug!("{:?} {n:?} {:?}", k, fft_n - n + k);
                 t = twiddle_factors_table[k] * odds[k];
             }
 
             self[k] = even[k] + t;
-            self[k + N / 2] = even[k] - t;
+            self[k + n / 2] = even[k] - t;
         }
 
         self.to_vec()
-    }
-}
-
-pub struct RandComplex<T> {
-    complex: T,
-    step: T,
-}
-
-pub struct Sine {
-    freq: f32,
-    sample_rate: u32,
-    samples_nr: u32,
-}
-
-impl RandComplex<f32> {
-    pub fn default(step: f32, opt_complex: Option<f32>) -> Self {
-        if let Some(complex) = opt_complex {
-            RandComplex {
-                complex: complex,
-                step: step,
-            }
-        } else {
-            RandComplex {
-                complex: 0.0,
-                step: step,
-            }
-        }
-    }
-    pub fn random_vec(samples_nr: usize, step: f32) -> Option<Vec<f32>> {
-        let complex = RandComplex::default(step, None);
-        Some(complex.take(samples_nr).collect())
-    }
-}
-
-impl Sine {
-    pub fn new(freq: f32, sample_rate: u32) -> Self {
-        Sine {
-            freq,
-            sample_rate,
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for Sine {
-    fn default() -> Self {
-        Sine {
-            freq: 2000.0,
-            samples_nr: 0,
-            sample_rate: 44000,
-        }
-    }
-}
-
-impl Iterator for Sine {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.samples_nr = self.samples_nr.wrapping_add(1);
-        let value = TAU * self.freq * (self.samples_nr as f32 / self.sample_rate as f32);
-        Some(value.sin())
-    }
-}
-
-impl Iterator for RandComplex<f32> {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut rng = rand::rng();
-        // rng.reseed().unwrap();
-        self.step = rng.random_range(0.01..1.0);
-        self.complex = self.step;
-        Some(self.complex)
     }
 }

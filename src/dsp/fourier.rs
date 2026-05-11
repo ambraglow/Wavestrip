@@ -1,8 +1,5 @@
-use std::iter::FromIterator;
-use std::ops::{Deref, DerefMut};
-
-use crate::app::FRACTION_STEP;
-use crate::fft::{utils::even_odd_split, *};
+use crate::dsp::utils::even_odd_split;
+use crate::dsp::*;
 
 #[derive(Clone)]
 pub struct FourierTransform<T: Copy> {
@@ -18,19 +15,19 @@ impl FourierTransform<Complex32> {
             bins: Vec::new(),
             split_bins: (Vec::new(), Vec::new()),
             signal: Vec::new(),
-            twiddle_factors_table: twiddle_precompute(1024),
+            twiddle_factors_table: Vec::new(),
         }
     }
 
-    pub fn twiddle_precompute(&mut self, N: usize) -> Vec<Complex32> {
-        let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
+    pub fn twiddle_precompute(&mut self, n: usize) -> Vec<Complex32> {
+        let w: Complex<f32> = Complex32::cis(-TAU / n as f32);
 
-        let twiddle_factors = (0..N).map(|n| W.powf(n as f32)).collect::<Vec<Complex32>>();
+        let twiddle_factors = (0..n).map(|n| w.powf(n as f32)).collect::<Vec<Complex32>>();
 
         return twiddle_factors;
     }
 
-    pub fn add_zero_padding(&mut self, N: usize) {
+    pub fn add_zero_padding(&mut self, n: usize) {
         // self.signal
         // .append(&mut vec![0f32; ZERO_PADDING - FRACTION_STEP]);
         // self.bins = self.signal.clone();
@@ -81,43 +78,41 @@ impl Fourier for FourierTransform<Complex32> {
         todo!()
     }
 
-    #[allow(non_snake_case)]
     fn ditfft(&mut self, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex32> {
         todo!()
     }
 }
 
-#[allow(non_snake_case)]
-pub fn twiddle_precompute(N: usize) -> Vec<Complex32> {
-    let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
+pub fn twiddle_precompute(n: usize) -> Vec<Complex32> {
+    let w: Complex<f32> = Complex32::cis(-TAU / n as f32);
 
-    let mut twiddle_factors = (0..N / 2)
-        .map(|n| W.powf(n as f32))
+    let mut twiddle_factors = (0..n / 2)
+        .map(|n| w.powf(n as f32))
         .collect::<Vec<Complex32>>();
 
     // let (mut a, _) = even_odd_split(&mut twiddle_factors).unwrap();
     // let mut n: usize = a.len();
     // twiddle_factors.append(&mut a);
     // let mut a = twiddle_factors.clone();
-    let mut n: usize = twiddle_factors.len();
-    while n != 1 {
+    let mut twiddle_n: usize = twiddle_factors.len();
+    while twiddle_n != 1 {
         println!("{n:?}");
         let (mut a, _) = even_odd_split(&mut twiddle_factors).unwrap();
-        let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+        let mut meow = a.iter().map(|a| w.powc(*a)).collect::<Vec<_>>();
         twiddle_factors.append(&mut meow);
 
         while a.len() < twiddle_factors.len() {
             (a, _) = even_odd_split(&mut a).unwrap();
-            let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+            let mut meow = a.iter().map(|a| w.powc(*a)).collect::<Vec<_>>();
             twiddle_factors.append(&mut meow);
             println!("{:?}", a.len());
             if a.len() <= 1 {
-                let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
+                let mut meow = a.iter().map(|a| w.powc(*a)).collect::<Vec<_>>();
                 twiddle_factors.append(&mut meow);
                 break;
             }
         }
-        n = a.len();
+        twiddle_n = a.len();
 
         // let mut meow = a.iter().map(|a| W.powc(*a)).collect::<Vec<_>>();
         // twiddle_factors.append(&mut meow);
@@ -134,6 +129,7 @@ pub fn twiddle_precompute(N: usize) -> Vec<Complex32> {
 #[allow(non_snake_case)]
 pub fn ditfft(x: &mut Vec<Complex32>, twiddle_factors_table: &Vec<Complex32>) -> Vec<Complex<f32>> {
     let N = x.len();
+    let fft_N = twiddle_factors_table.len();
     // let W: Complex<f32> = Complex32::cis(-TAU / N as f32);
     // let mut out_vec: Vec<Complex32> = vec![Complex32::new(0f32, 0f32); N + 1];
     // out_vec.append(&mut x.clone());
@@ -151,9 +147,9 @@ pub fn ditfft(x: &mut Vec<Complex32>, twiddle_factors_table: &Vec<Complex32>) ->
 
     let mut t: Complex32;
     for k in 0..N / 2 {
-        if N / 2 != FRACTION_STEP / 2 {
+        if N / 2 != fft_N / 2 {
             // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);
-            t = twiddle_factors_table[FRACTION_STEP - N + k] * odds[k];
+            t = twiddle_factors_table[fft_N - N + k] * odds[k];
         } else {
             // 0..1024
             // println!("{:?} {N:?} {:?}", k, FRACTION_STEP - N + k);

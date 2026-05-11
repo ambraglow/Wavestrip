@@ -1,13 +1,24 @@
-use std::f32::consts::{PI, TAU};
+use crate::dsp::*;
 
 #[allow(dead_code)]
 pub trait Window {
-    // fn hamming();
-    // fn rectangular(&mut self, points: u32) -> anyhow::Result<Vec<f32>>;
     fn blackman(&mut self);
     fn ham(&mut self);
     fn hanning(&mut self);
     fn rectangular(&mut self, window_size: usize);
+}
+
+#[derive(Debug)]
+pub enum Types {
+    NoWindow,
+    Blackman,
+    Ham,
+    Hanning,
+    Rectangular,
+}
+
+impl Types {
+    pub const VALUES: [&str; 5] = ["no window", "Blackman", "Ham", "hanning", "rectangular"];
 }
 
 impl Window for Vec<f32> {
@@ -51,10 +62,3 @@ impl Window for Vec<f32> {
         }
     }
 }
-
-// #[allow(dead_code)]
-// impl Window for FourierTransform {
-//     // fn rectangular(&mut self, points: u32) -> anyhow::Result<Vec<f32>> {
-//     //     Ok(self.bins.iter().map(|a| a.abs()).collect::<Vec<_>>())
-//     // }
-// }

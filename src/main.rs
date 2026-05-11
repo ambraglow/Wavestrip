@@ -1,7 +1,7 @@
 use anyhow::Ok;
 
 mod app;
-mod fft;
+mod dsp;
 mod tasks;
 
 fn main() -> anyhow::Result<()> {

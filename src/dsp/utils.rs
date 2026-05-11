@@ -1,4 +1,4 @@
-use crate::fft::*;
+use crate::dsp::*;
 
 pub trait PowerOfTwo {
     fn is_power_of_two(&mut self) -> bool;
@@ -8,11 +8,7 @@ pub trait PowerOfTwo {
 impl PowerOfTwo for i32 {
     fn is_power_of_two(&mut self) -> bool {
         let a = self.clone();
-        if a & (a - 1) == 0 {
-            true
-        } else {
-            false
-        }
+        if a & (a - 1) == 0 { true } else { false }
     }
     fn round_to_2n(&mut self) -> Self {
         let mut a: i32 = self.clone();
