@@ -1,1 +1,3 @@
-### Continuation of my DSP shenanigans
+### Wavestrip
+
+An audio frequency analysis tool
